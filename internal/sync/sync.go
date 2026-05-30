@@ -71,6 +71,37 @@ type Syncer struct {
 	anilist *anilist.Client
 	mdblist *mdblist.Client
 	cfg     SyncConfig
+	cache   *itemCache
+}
+
+// itemCache tracks the provider IDs we last synced for each list,
+// so we can diff-update (remove stale, add new) instead of
+// delete-and-recreate.
+type itemCache struct {
+	// Items maps list ID → provider ID strings (e.g. "imdb:tt12345").
+	Items map[int][]string `json:"items"`
+}
+
+// loadItemCache reads the cache from disk.
+func loadItemCache(path string) *itemCache {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return &itemCache{Items: map[int][]string{}}
+	}
+	var c itemCache
+	if err := json.Unmarshal(data, &c); err != nil || c.Items == nil {
+		return &itemCache{Items: map[int][]string{}}
+	}
+	return &c
+}
+
+// save writes the cache to disk.
+func (c *itemCache) save(path string) error {
+	data, err := json.MarshalIndent(c, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
 }
 
 // SyncConfig holds the parameters for a sync operation.
@@ -85,6 +116,8 @@ type SyncConfig struct {
 	OutputDir               string
 	Blacklist               []string
 	FallbackRelationTypes   []string
+	ExcludeTags             []string
+	ListCachePath           string // path to item cache JSON file
 }
 
 // isBlacklisted checks if a show should be skipped.
@@ -109,12 +142,27 @@ func (c *SyncConfig) isBlacklisted(title string, idMal int) bool {
 	return false
 }
 
+// hasExcludedTag checks if the show has any tag matching the exclude list.
+func (s *Syncer) hasExcludedTag(show anilist.Show) bool {
+	for _, exclude := range s.cfg.ExcludeTags {
+		if exclude == "" {
+			continue
+		}
+		if show.HasTag(exclude) {
+			return true
+		}
+	}
+	return false
+}
+
 // New creates a new Syncer.
 func New(ani *anilist.Client, mdb *mdblist.Client, cfg SyncConfig) *Syncer {
+	cache := loadItemCache(cfg.ListCachePath)
 	return &Syncer{
 		anilist: ani,
 		mdblist: mdb,
 		cfg:     cfg,
+		cache:   cache,
 	}
 }
 
@@ -197,6 +245,14 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 			slog.Debug("skipped show (blacklisted)",
 				"title", title,
 				"idMal", idMal)
+			continue
+		}
+
+		if s.hasExcludedTag(show) {
+			skippedBlacklist++
+			slog.Debug("skipped show (excluded tag)",
+				"title", title,
+				"tags", show.Tags)
 			continue
 		}
 
@@ -418,31 +474,115 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 	if existing != nil {
 		slog.Debug("found existing list", "id", existing.ID, "title", title)
 
-		// Recreate with new items (delete + create with items)
-		slog.Info("replacing list items",
-			"title", title,
-			"id", existing.ID,
-			"items", len(mdbItems))
+		newIDs := providerIDStrings(mdbItems)
+		oldIDs := s.cache.Items[existing.ID]
 
-		newList, err := s.mdblist.DeleteAndRecreate(ctx, existing.ID, title, desc, s.cfg.Public, providerIDs(mdbItems))
-		if err != nil {
+		// Compute diff: remove stale items, then add new ones.
+		var toRemove, toAdd []map[string]any
+
+		if len(oldIDs) > 0 {
+			oldSet := make(map[string]bool, len(oldIDs))
+			for _, id := range oldIDs {
+				oldSet[id] = true
+			}
+			newSet := make(map[string]bool, len(newIDs))
+			for _, id := range newIDs {
+				newSet[id] = true
+			}
+
+			// Items in old that aren't in new → remove
+			for _, id := range oldIDs {
+				if !newSet[id] {
+					toRemove = append(toRemove, parseProviderID(id))
+				}
+			}
+			// Items in new that aren't in old → add
+			for _, id := range newIDs {
+				if !oldSet[id] {
+					toAdd = append(toAdd, parseProviderID(id))
+				}
+			}
+		} else {
+			// No cache entry — remove old items by deleting and recreating,
+			// then cache will be populated for future runs.
+			slog.Info("no cache for list, performing full replace",
+				"title", title, "id", existing.ID)
+			newList, err := s.mdblist.DeleteAndRecreate(ctx, existing.ID,
+				title, desc, s.cfg.Public, providerIDs(mdbItems))
+			if err != nil {
+				return Result{
+					Season: season, Year: year,
+					Error: fmt.Errorf("replace list: %w", err),
+				}
+			}
+			// Save cache for future diff runs
+			s.cache.Items[existing.ID] = newIDs
+			if err := s.cache.save(s.cfg.ListCachePath); err != nil {
+				slog.Warn("failed to save item cache", "error", err)
+			}
+
 			return Result{
-				Season: season,
-				Year:   year,
-				Error:  fmt.Errorf("replace list: %w", err),
+				Season: season, Year: year,
+				ListTitle:        title,
+				ListURL:          newList.GetURL(),
+				ShowCount:        len(shows),
+				TotalInDB:        foundDirect + foundFallback,
+				FoundViaFallback: foundFallback,
+				Skipped:          notFoundCount,
+				Updated:          true,
 			}
 		}
+
+		// Apply diff
+		removed, added := len(toRemove), len(toAdd)
+		if removed > 0 {
+			slog.Debug("removing stale items", "count", removed, "title", title)
+			if err := s.mdblist.RemoveItems(ctx, existing.ID, toRemove); err != nil {
+				return Result{
+					Season: season, Year: year,
+					Error: fmt.Errorf("remove items: %w", err),
+				}
+			}
+		}
+		if added > 0 {
+			slog.Debug("adding new items", "count", added, "title", title)
+			const batchSize = 200
+			for i := 0; i < len(toAdd); i += batchSize {
+				end := i + batchSize
+				if end > len(toAdd) {
+					end = len(toAdd)
+				}
+				if err := s.mdblist.AddItems(ctx, existing.ID, toAdd[i:end]); err != nil {
+					return Result{
+						Season: season, Year: year,
+						Error: fmt.Errorf("add items: %w", err),
+					}
+				}
+			}
+		}
+
+		// Update cache
+		s.cache.Items[existing.ID] = newIDs
+		if err := s.cache.save(s.cfg.ListCachePath); err != nil {
+			slog.Warn("failed to save item cache", "error", err)
+		}
+
+		slog.Info("updated list items via diff",
+			"title", title,
+			"removed", removed,
+			"added", added,
+			"total", len(mdbItems))
 
 		return Result{
 			Season:           season,
 			Year:             year,
 			ListTitle:        title,
-			ListURL:          newList.GetURL(),
+			ListURL:          existing.GetURL(),
 			ShowCount:        len(shows),
 			TotalInDB:        foundDirect + foundFallback,
 			FoundViaFallback: foundFallback,
 			Skipped:          notFoundCount,
-			Updated:          true,
+			Updated:          removed > 0 || added > 0,
 		}
 	}
 
@@ -501,6 +641,42 @@ func providerIDs(items []mdbItem) []map[string]any {
 		ids[i] = it.id
 	}
 	return ids
+}
+
+// providerIDStrings serialises each provider ID map into a cache-friendly
+// string key, e.g. {"imdb": "tt12345"} → "imdb:tt12345".
+func providerIDStrings(items []mdbItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		for k, v := range it.id {
+			switch val := v.(type) {
+			case string:
+				out[i] = k + ":" + val
+			case float64:
+				out[i] = k + ":" + fmt.Sprintf("%.0f", val)
+			case int:
+				out[i] = k + ":" + fmt.Sprintf("%d", val)
+			default:
+				out[i] = k + ":" + fmt.Sprint(v)
+			}
+		}
+	}
+	return out
+}
+
+// parseProviderID reverses providerIDStrings: "imdb:tt12345" → {"imdb": "tt12345"}.
+func parseProviderID(s string) map[string]any {
+	idx := strings.Index(s, ":")
+	if idx < 0 {
+		return map[string]any{}
+	}
+	key := s[:idx]
+	val := s[idx+1:]
+	// Try number first (TMDB, TVDB IDs)
+	if n, err := fmt.Sscanf(val, "%f", new(float64)); err == nil && n == 1 {
+		// Keep as string — MDBList accepts both string and numeric
+	}
+	return map[string]any{key: val}
 }
 
 // SyncAll processes all configured seasons.

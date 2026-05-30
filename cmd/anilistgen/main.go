@@ -132,6 +132,15 @@ Subcommand-specific flags:
 See the full spec at specs/anilist-seasonal-mdblist/PRODUCT.md for details.`)
 }
 
+// listCachePath derives the item-cache path from the state-file path.
+// e.g. /tmp/anilistgen.lastrun → /tmp/anilistgen_listcache.json
+func listCachePath(stateFile string) string {
+	if stateFile == "" {
+		return ""
+	}
+	return strings.TrimSuffix(stateFile, ".lastrun") + "_listcache.json"
+}
+
 // runOneshot processes all configured seasons once and exits.
 func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) error {
 	cfg, _, err := config.Load(configPath)
@@ -175,6 +184,8 @@ func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) 
 		DryRun:                dryRun,
 		OutputDir:             outputDir,
 		FallbackRelationTypes: cfg.AniList.FallbackRelationTypes,
+		ExcludeTags:           cfg.AniList.ExcludeTags,
+		ListCachePath:         listCachePath(cfg.StateFile),
 	}
 
 	syncer := sync.New(aniClient, mdbClient, syncCfg)
@@ -235,6 +246,8 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 		Public:                cfg.MDBList.Public,
 		DryRun:                dryRun,
 		FallbackRelationTypes: cfg.AniList.FallbackRelationTypes,
+		ExcludeTags:           cfg.AniList.ExcludeTags,
+		ListCachePath:         listCachePath(cfg.StateFile),
 	}
 
 	syncer := sync.New(aniClient, mdbClient, syncCfg)

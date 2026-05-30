@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -29,6 +30,11 @@ type RelationNode struct {
 	Title Title `json:"title"`
 }
 
+// Tag represents an AniList content tag with name and relevance rank.
+type Tag struct {
+	Name string `json:"name"`
+}
+
 // Show represents an anime show from the AniList API.
 type Show struct {
 	ID        int            `json:"id"`
@@ -38,6 +44,7 @@ type Show struct {
 	Episodes  *int           `json:"episodes"`
 	Duration  *int           `json:"duration"`
 	Genres    []string       `json:"genres"`
+	Tags      []Tag          `json:"tags"`
 	Status    string         `json:"status"`
 	Relations *RelationBlock `json:"relations,omitempty"`
 }
@@ -90,12 +97,32 @@ func (s Show) AllRelationMALIDs() []int {
 }
 
 // SkipByDuration returns true if the show should be skipped because its
-// episode duration is defined and 10 minutes or less.
+// per-episode duration is ≤ 10 minutes, or its total runtime
+// (duration × episodes) is ≤ 10 minutes (single-episode shorts).
 func (s Show) SkipByDuration() bool {
-	if s.Duration == nil {
-		return false
+	if s.Duration != nil && *s.Duration <= 10 {
+		return true
 	}
-	return *s.Duration <= 10
+	// Total runtime check: a single very short episode (e.g. 6 min × 1).
+	if s.Duration != nil && s.Episodes != nil {
+		total := *s.Duration * *s.Episodes
+		if total <= 10 {
+			return true
+		}
+	}
+	return false
+}
+
+// HasTag returns true if the show has a tag matching the given name
+// (case-insensitive).
+func (s Show) HasTag(name string) bool {
+	lower := strings.ToLower(name)
+	for _, t := range s.Tags {
+		if strings.ToLower(t.Name) == lower {
+			return true
+		}
+	}
+	return false
 }
 
 // Title holds the english and romaji titles.
@@ -131,6 +158,7 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 			episodes
 			duration
 			genres
+			tags { name }
 			status
 			relations {
 				edges {

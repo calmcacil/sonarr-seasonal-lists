@@ -59,6 +59,9 @@ type AniListConfig struct {
 	// Only matching relation types are used as fallback.
 	// Default: ["PREQUEL", "PARENT"]. Add "ADAPTATION" or "SIDE_STORY" for broader matching.
 	FallbackRelationTypes []string `yaml:"fallback_relation_types"`
+	// ExcludeTags is a list of AniList tag names to exclude.
+	// Shows with any matching tag (case-insensitive) are skipped.
+	ExcludeTags []string `yaml:"exclude_tags"`
 }
 
 // MDBListConfig holds list creation settings.
@@ -340,6 +343,14 @@ func (c *Config) applyEnvOverrides() {
 			parts[i] = strings.TrimSpace(p)
 		}
 		c.AniList.FallbackRelationTypes = parts
+	}
+
+	if v := os.Getenv(envPrefix + "ANILIST_EXCLUDE_TAGS"); v != "" {
+		parts := strings.Split(v, ",")
+		for i, p := range parts {
+			parts[i] = strings.TrimSpace(p)
+		}
+		c.AniList.ExcludeTags = parts
 	}
 
 	if v := os.Getenv(envPrefix + "MDBLIST_TITLE_TEMPLATE"); v != "" {
