@@ -803,20 +803,32 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 						"result", searchResult.Title)
 					continue
 				}
-				// Title search is the last resort — require the result year to
-				// be within ±2 years of the show's start year. This prevents
-				// matching reboots (2026) to their decades-old originals (1994).
+				// Title search is last resort — ±2 year check by default.
+				// Exception: if the result title is a substring of the search
+				// query (e.g. "JoJo's Bizarre Adventure" inside "STEEL BALL RUN
+				// JoJo's Bizarre Adventure 1st STAGE"), it's a franchise match
+				// and the year gap is expected (franchise entry is older).
+				yearOK := true
 				if it.show.StartDate.Year != nil && *it.show.StartDate.Year > 0 &&
 					searchResult.Year > 0 {
 					diff := searchResult.Year - *it.show.StartDate.Year
+					franchiseMatch := strings.Contains(strings.ToLower(t),
+						strings.ToLower(searchResult.Title))
 					if diff < -2 || diff > 2 {
-						slog.Debug("rejected title search result (year mismatch)",
-							"title", displayTitle,
-							"show_year", *it.show.StartDate.Year,
-							"result_year", searchResult.Year,
-							"result", searchResult.Title)
-						continue
+						if franchiseMatch && diff > -15 {
+							// Franchise match within 15 years — accept
+						} else {
+							yearOK = false
+						}
 					}
+				}
+				if !yearOK {
+					slog.Debug("rejected title search result (year mismatch)",
+						"title", displayTitle,
+						"show_year", *it.show.StartDate.Year,
+						"result_year", searchResult.Year,
+						"result", searchResult.Title)
+					continue
 				}
 				id := mdblist.ProviderIDsFromSearch(*searchResult)
 				if len(id) > 0 {
