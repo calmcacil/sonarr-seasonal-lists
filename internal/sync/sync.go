@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -325,23 +326,34 @@ func titleVariations(title string) []string {
 
 // resolveChainFallback follows PREQUEL/PARENT relations recursively when
 // a show's direct MAL ID and its immediate relations aren't in MDBList.
-// Returns a provider ID map if found, nil otherwise.
+// Returns the best match by year proximity, nil if none found.
 func (s *Syncer) resolveChainFallback(ctx context.Context, show anilist.Show, malInfoMap map[int]mdblist.MediaInfo) map[string]any {
 	if s.anilist == nil || len(s.cfg.FallbackRelationTypes) == 0 {
 		return nil
 	}
 
+	showYear := 0
+	if show.StartDate.Year != nil {
+		showYear = *show.StartDate.Year
+	}
+
+	type candidate struct {
+		id    map[string]any
+		score int // lower is better
+	}
+	var candidates []candidate
+
 	seen := map[int]bool{}
 
-	var trace func(malID int, depth int) map[string]any
-	trace = func(malID int, depth int) map[string]any {
+	var trace func(malID int, depth int)
+	trace = func(malID int, depth int) {
 		if malID <= 0 || seen[malID] || depth >= maxChainDepth {
-			return nil
+			return
 		}
 		seen[malID] = true
 
-		// Check if this MAL ID is in MDBList
-		if info, ok := malInfoMap[malID]; ok {
+		// Helper to build provider ID map and add to candidates
+		tryMatch := func(info mdblist.MediaInfo) {
 			id := map[string]any{}
 			if info.IDs.IMDB != "" {
 				id["imdb"] = info.IDs.IMDB
@@ -350,57 +362,63 @@ func (s *Syncer) resolveChainFallback(ctx context.Context, show anilist.Show, ma
 			} else if info.IDs.TVDB != 0 {
 				id["tvdb"] = info.IDs.TVDB
 			}
-			if len(id) > 0 {
-				return id
+			if len(id) == 0 {
+				return
 			}
+			score := 999
+			if showYear > 0 && info.Year > 0 {
+				if d := showYear - info.Year; d >= 0 {
+					score = d
+				} else {
+					score = -d
+				}
+			}
+			candidates = append(candidates, candidate{id: id, score: score})
 		}
 
-		// Not in batch map — try a fresh MDBList lookup for this MAL ID
+		// Check batch map first
+		if info, ok := malInfoMap[malID]; ok {
+			tryMatch(info)
+			return // don't recurse deeper if found in batch
+		}
+
+		// Fresh MDBList lookup
 		if s.mdblist != nil {
 			if info, err := s.mdblist.LookupByMAL(ctx, malID); err == nil && info != nil {
-				id := map[string]any{}
-				if info.IDs.IMDB != "" {
-					id["imdb"] = info.IDs.IMDB
-				} else if info.IDs.TMDB != 0 {
-					id["tmdb"] = info.IDs.TMDB
-				} else if info.IDs.TVDB != 0 {
-					id["tvdb"] = info.IDs.TVDB
-				}
-				if len(id) > 0 {
-					return id
-				}
+				tryMatch(*info)
+				return
 			}
 		}
 
-		// Not in MDBList — query AniList for this show's relations to go deeper
+		// Not in MDBList — go deeper via AniList
 		parent, err := s.anilist.FetchShowByMAL(ctx, malID)
 		if err != nil || parent == nil {
-			return nil
+			return
 		}
-
-		// Try each relation type
 		for _, relID := range parent.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
 			if relID == malID || seen[relID] {
 				continue
 			}
-			if result := trace(relID, depth+1); result != nil {
-				return result
-			}
+			trace(relID, depth+1)
 		}
-
-		return nil
 	}
 
 	for _, relID := range show.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
 		if relID == 0 || (show.IDMal != nil && relID == *show.IDMal) {
 			continue
 		}
-		if result := trace(relID, 1); result != nil {
-			return result
-		}
+		trace(relID, 1)
 	}
 
-	return nil
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// Pick the match closest in year to the show
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].score < candidates[j].score
+	})
+	return candidates[0].id
 }
 
 // resolveManualMatch resolves a user-provided MAL ID from the manual
