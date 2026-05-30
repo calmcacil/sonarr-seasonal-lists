@@ -86,7 +86,7 @@ anilist:
   seasons: [all]           # Or: winter, spring, summer, fall
   max_per_season: 100      # Max shows fetched per season from AniList
   include_ona: true        # Include ONA format alongside TV
-  winter_overflow: false   # Merge previous year's December shows into WINTER
+  winter_overflow: true    # Merge prior year's December-only shows into WINTER
   fallback_relation_types: [PREQUEL, PARENT]
     # When a show is not in MDBList by its direct MAL ID, try these
     # AniList relation types as fallback:
@@ -94,6 +94,9 @@ anilist:
     #   PARENT    — broader franchise entry (DBS: Beerus → Dragon Ball Super)
     #   ADAPTATION — source material (usually manga — use with caution)
     #   SIDE_STORY — side stories (usually unrelated — use with caution)
+  exclude_tags: []         # AniList content tags to exclude (case-insensitive):
+                           #   - "Hentai"
+                           #   - "Guro"
 
 # ── MDBList output ────────────────────────────────────────────────────
 mdblist:
@@ -129,8 +132,9 @@ Useful for Docker, CI/CD, or containers.
 | `ALG_ANILIST_SEASONS` | `anilist.seasons` | `all` |
 | `ALG_ANILIST_MAX_PER_SEASON` | `anilist.max_per_season` | `100` |
 | `ALG_ANILIST_INCLUDE_ONA` | `anilist.include_ona` | `true` |
-| `ALG_ANILIST_WINTER_OVERFLOW` | `anilist.winter_overflow` | `false` |
+| `ALG_ANILIST_WINTER_OVERFLOW` | `anilist.winter_overflow` | `true` |
 | `ALG_ANILIST_FALLBACK_RELATIONS` | `anilist.fallback_relation_types` | `PREQUEL,PARENT` |
+| `ALG_ANILIST_EXCLUDE_TAGS` | `anilist.exclude_tags` | `""` |
 | `ALG_MDBLIST_TITLE_TEMPLATE` | `mdblist.title_template` | `Anime {season} {year}` |
 | `ALG_MDBLIST_DESCRIPTION_TEMPLATE` | `mdblist.description_template` | (long default) |
 | `ALG_MDBLIST_PUBLIC` | `mdblist.public` | `true` |
@@ -139,7 +143,7 @@ Useful for Docker, CI/CD, or containers.
 | `ALG_LOG_FILE` | `logging.file` | `""` (stderr) |
 
 **Notes on env var format:**
-- Lists (YEARS, SEASONS, BLACKLIST, FALLBACK_RELATIONS) use comma separation: `2026,2027`
+- Lists (YEARS, SEASONS, BLACKLIST, FALLBACK_RELATIONS, EXCLUDE_TAGS) use comma separation: `2026,2027`
 - Booleans (RUN_ON_START, PUBLIC, INCLUDE_ONA, WINTER_OVERFLOW) accept `true`/`1` or `false`/`0`
 - INTERVAL is a Go duration string: `168h` (week), `24h` (day), `30m`, `0` (oneshot)
 
@@ -150,6 +154,23 @@ Shows to exclude from lists. Supports:
 - **Title substrings**: `"One Piece"` skips any show with "One Piece" in the title
 - Matching is case-insensitive
 
+### Tag exclusion
+
+Shows with specific AniList content tags can be filtered out entirely.
+This is useful for excluding categories you don't want in your lists.
+
+```yaml
+anilist:
+  exclude_tags:
+    - "Hentai"
+    - "Guro"
+```
+
+Tag matching is **case-insensitive** (e.g. `"hentai"` matches `"Hentai"`).
+Unlike the blacklist (which matches by title or MAL ID), tag exclusion
+checks AniList's tag taxonomy — a show tagged with any matching tag
+is skipped regardless of its title.
+
 ---
 
 ## How it works
@@ -159,7 +180,7 @@ Shows to exclude from lists. Supports:
 For each configured season and year:
 
 ```
-AniList query ──→ Filter (duration ≤10 min, blacklist)
+AniList query ──→ Filter (duration ≤10 min, blacklist, excluded tags)
       │
       ▼
 Batch-resolve MAL IDs via MDBList lookup
@@ -242,7 +263,8 @@ anilist:
 
 | Config | WINTER 2026 result |
 |--------|-------------------|
-| `winter_overflow: false` (default) | Shows airing Jan–Feb 2026 only |
+| `winter_overflow: true` (default) | Shows airing Jan–Feb 2026 + December 2025 shows not already in the list |
+| `winter_overflow: false` | Shows airing Jan–Feb 2026 only |
 | `winter_overflow: true` | Shows airing Jan–Feb 2026 + December 2025 shows not already in the list |
 
 The overflow is capped at `max_per_season` results, just like the primary
