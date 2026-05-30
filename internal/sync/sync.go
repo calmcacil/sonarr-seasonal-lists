@@ -237,7 +237,24 @@ func (s *Syncer) resolveChainFallback(ctx context.Context, show anilist.Show, ma
 			}
 		}
 
-		// Not in batch lookup — query AniList for this show's relations
+		// Not in batch map — try a fresh MDBList lookup for this MAL ID
+		if s.mdblist != nil {
+			if info, err := s.mdblist.LookupByMAL(ctx, malID); err == nil && info != nil {
+				id := map[string]any{}
+				if info.IDs.IMDB != "" {
+					id["imdb"] = info.IDs.IMDB
+				} else if info.IDs.TMDB != 0 {
+					id["tmdb"] = info.IDs.TMDB
+				} else if info.IDs.TVDB != 0 {
+					id["tvdb"] = info.IDs.TVDB
+				}
+				if len(id) > 0 {
+					return id
+				}
+			}
+		}
+
+		// Not in MDBList — query AniList for this show's relations to go deeper
 		parent, err := s.anilist.FetchShowByMAL(ctx, malID)
 		if err != nil || parent == nil {
 			return nil

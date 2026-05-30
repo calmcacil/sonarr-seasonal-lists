@@ -264,6 +264,19 @@ func (c *Client) DeleteAndRecreate(ctx context.Context, listID int, name, descri
 // Returns a map of malID -> MediaInfo for found items (unfound IDs are omitted).
 const batchLookupSize = 15
 
+// LookupByMAL checks a single MAL ID against MDBList's database.
+// Returns nil if not found.
+func (c *Client) LookupByMAL(ctx context.Context, malID int) (*MediaInfo, error) {
+	result, err := c.BatchLookupByMAL(ctx, []int{malID})
+	if err != nil {
+		return nil, err
+	}
+	if info, ok := result[malID]; ok {
+		return &info, nil
+	}
+	return nil, nil
+}
+
 func (c *Client) BatchLookupByMAL(ctx context.Context, malIDs []int) (map[int]MediaInfo, error) {
 	if len(malIDs) == 0 {
 		return map[int]MediaInfo{}, nil
