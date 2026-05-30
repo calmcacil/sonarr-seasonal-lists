@@ -676,8 +676,8 @@ func parseProviderID(s string) map[string]any {
 	val := s[idx+1:]
 	switch key {
 	case "tmdb", "tvdb":
-		var num float64
-		if _, err := fmt.Sscanf(val, "%f", &num); err == nil {
+		var num int
+		if _, err := fmt.Sscanf(val, "%d", &num); err == nil {
 			return map[string]any{key: num}
 		}
 		// fallback: return as string if parse fails
