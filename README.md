@@ -1,9 +1,10 @@
 # anilistgen
 
 Fetch all anime for every season of a given year from **AniList** and
-create/update **MDBList** lists for use with **Agregarr**.
+create/update **MDBList** lists for use with **Sonarr** (via MDBList
+integration).
 
-Agregarr has no built-in "all shows airing this season" source. Community
+Sonarr has no built-in "all shows airing this season" source. Community
 lists are unreliable. This tool generates authoritative lists directly
 from AniList's seasonal data.
 
@@ -373,13 +374,13 @@ for the full environment reference and config file option.
 
 ---
 
-## Agregarr integration
+## Sonarr integration
 
-After each sync, paste the printed URLs into Agregarr as
-**MDBList → Custom List** sources. Create one collection per season.
+After each sync, the MDBList lists can be added to Sonarr as
+**List Import** sources. Sonarr supports MDBList lists natively.
 
-Re-running updates the lists in-place — Agregarr picks up changes
-on its next sync.
+Re-running updates the lists in-place — Sonarr picks up changes
+on its next refresh.
 
 ---
 

@@ -3,8 +3,8 @@
 ## Overview
 
 A Go CLI tool that fetches seasonal anime from **AniList** (GraphQL API) and
-creates/updates **MDBList** lists for use with **Agregarr** (media server tool
-that has no built-in "current season" source).
+creates/updates **MDBList** lists for use with **Sonarr** (via MDBList
+list import, which Sonarr supports natively).
 
 ## Architecture
 

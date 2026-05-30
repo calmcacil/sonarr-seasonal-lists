@@ -10,12 +10,12 @@ systemd timer, a long-lived daemon, or a container.
 
 ## Problem
 
-Agregarr has no built-in "current season anime" source that captures
+Sonarr has no built-in "current season anime" source that captures
 every show airing that season — only trending/popular subsets.
 Community-maintained Trakt and MDBList lists for seasonal anime are
 unreliable and often abandoned. This tool replaces manual list curation
 by generating authoritative lists directly from AniList's seasonal data
-and publishing them to MDBList, where Agregarr can consume them as
+and publishing them to MDBList, where Sonarr can consume them as
 Custom List sources.
 
 ## Configuration
@@ -453,8 +453,9 @@ volume mounts, and config file option documented.
 | AniList | 30 req/min | 4–8 requests | 4–7× |
 | MDBList Free | 1,000 req/day | ~24–40 requests | 25–40× |
 
-## Agregarr integration
+## Sonarr integration
 
-After each sync, paste the printed URLs into Agregarr as
-**MDBList → Custom List** sources. Running the tool periodically
-updates lists in-place — Agregarr picks up changes on its next sync.
+After each sync, add the MDBList list URLs to Sonarr as List Import sources.
+Sonarr supports MDBList lists natively.
+
+The tool updates lists in-place — Sonarr picks up changes on its next refresh.
