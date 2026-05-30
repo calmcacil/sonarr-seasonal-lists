@@ -1,6 +1,6 @@
-ARG VERSION=dev
-
 # ── builder ───────────────────────────────────────────────────────────
+# VERSION is consumed by -ldflags to bake the semver tag into the binary.
+ARG VERSION=dev
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /src
@@ -14,6 +14,9 @@ RUN CGO_ENABLED=0 go build -o /usr/local/bin/anilistgen \
 # Distroless base image — no shell, no package manager, non-root user.
 # Includes ca-certificates for HTTPS calls to AniList & MDBList.
 FROM gcr.io/distroless/base-debian12:nonroot
+
+LABEL org.opencontainers.image.source="https://github.com/calmcacil/anilistgen"
+LABEL org.opencontainers.image.description="Seasonal anime list generator for MDBList from AniList"
 
 COPY --from=builder /usr/local/bin/anilistgen /usr/local/bin/anilistgen
 
