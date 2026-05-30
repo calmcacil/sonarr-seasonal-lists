@@ -339,82 +339,106 @@ func (s *Syncer) resolveChainFallback(ctx context.Context, show anilist.Show, ma
 
 	type candidate struct {
 		id    map[string]any
-		score int // lower is better
+		score int
 	}
 	var candidates []candidate
 
-	seen := map[int]bool{}
-
-	var trace func(malID int, depth int)
-	trace = func(malID int, depth int) {
-		if malID <= 0 || seen[malID] || depth >= maxChainDepth {
+	// tryMatch checks a MediaInfo against MDBList and adds it as a candidate
+	tryMatch := func(info mdblist.MediaInfo) {
+		id := map[string]any{}
+		if info.IDs.IMDB != "" {
+			id["imdb"] = info.IDs.IMDB
+		} else if info.IDs.TMDB != 0 {
+			id["tmdb"] = info.IDs.TMDB
+		} else if info.IDs.TVDB != 0 {
+			id["tvdb"] = info.IDs.TVDB
+		}
+		if len(id) == 0 {
 			return
 		}
-		seen[malID] = true
-
-		// Helper to build provider ID map and add to candidates
-		tryMatch := func(info mdblist.MediaInfo) {
-			id := map[string]any{}
-			if info.IDs.IMDB != "" {
-				id["imdb"] = info.IDs.IMDB
-			} else if info.IDs.TMDB != 0 {
-				id["tmdb"] = info.IDs.TMDB
-			} else if info.IDs.TVDB != 0 {
-				id["tvdb"] = info.IDs.TVDB
-			}
-			if len(id) == 0 {
-				return
-			}
-			score := 999
-			if showYear > 0 && info.Year > 0 {
-				if d := showYear - info.Year; d >= 0 {
-					score = d
-				} else {
-					score = -d
-				}
-			}
-			candidates = append(candidates, candidate{id: id, score: score})
-		}
-
-		// Check batch map first
-		if info, ok := malInfoMap[malID]; ok {
-			tryMatch(info)
-			return // don't recurse deeper if found in batch
-		}
-
-		// Fresh MDBList lookup
-		if s.mdblist != nil {
-			if info, err := s.mdblist.LookupByMAL(ctx, malID); err == nil && info != nil {
-				tryMatch(*info)
-				return
+		score := 999
+		if showYear > 0 && info.Year > 0 {
+			if d := showYear - info.Year; d >= 0 {
+				score = d
+			} else {
+				score = -d
 			}
 		}
-
-		// Not in MDBList — go deeper via AniList
-		parent, err := s.anilist.FetchShowByMAL(ctx, malID)
-		if err != nil || parent == nil {
-			return
-		}
-		for _, relID := range parent.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
-			if relID == malID || seen[relID] {
-				continue
-			}
-			trace(relID, depth+1)
-		}
+		candidates = append(candidates, candidate{id: id, score: score})
 	}
 
-	for _, relID := range show.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
-		if relID == 0 || (show.IDMal != nil && relID == *show.IDMal) {
-			continue
+	// Breadth-first: start with one-level relations, expand each level in batch
+	current := show.RelationMALIDsByType(s.cfg.FallbackRelationTypes)
+	seen := map[int]bool{}
+
+	for depth := 0; depth < maxChainDepth && len(current) > 0; depth++ {
+		// Separate into: already-in-MDBList vs need-to-fetch-relations
+		var fetchBatch []int
+		for _, malID := range current {
+			if malID <= 0 || seen[malID] {
+				continue
+			}
+			seen[malID] = true
+
+			// Check batch map first
+			if info, ok := malInfoMap[malID]; ok {
+				tryMatch(info)
+				continue
+			}
+
+			// Try fresh MDBList lookup
+			if s.mdblist != nil {
+				if info, err := s.mdblist.LookupByMAL(ctx, malID); err == nil && info != nil {
+					tryMatch(*info)
+					continue
+				}
+			}
+
+			fetchBatch = append(fetchBatch, malID)
 		}
-		trace(relID, 1)
+
+		if len(fetchBatch) == 0 {
+			break
+		}
+
+		// Batch-fetch ALL their relations in ONE AniList call
+		results, err := s.anilist.BatchFetchByMAL(ctx, fetchBatch)
+		if err != nil {
+			slog.Debug("batch chain fetch failed", "error", err)
+			break
+		}
+
+		// Build the next level of MAL IDs to explore
+		var next []int
+		for _, parent := range results {
+			if parent.IDMal == nil || *parent.IDMal <= 0 {
+				continue
+			}
+			// Check if THIS show (at the deeper level) is in MDBList
+			if info, ok := malInfoMap[*parent.IDMal]; ok {
+				tryMatch(info)
+				continue
+			}
+			if s.mdblist != nil {
+				if info, err := s.mdblist.LookupByMAL(ctx, *parent.IDMal); err == nil && info != nil {
+					tryMatch(*info)
+					continue
+				}
+			}
+			// Collect next-level relations
+			for _, relID := range parent.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
+				if relID > 0 && !seen[relID] {
+					next = append(next, relID)
+				}
+			}
+		}
+		current = next
 	}
 
 	if len(candidates) == 0 {
 		return nil
 	}
 
-	// Pick the match closest in year to the show
 	sort.Slice(candidates, func(i, j int) bool {
 		return candidates[i].score < candidates[j].score
 	})
