@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -155,6 +156,116 @@ func (s *Syncer) hasExcludedTag(show anilist.Show) bool {
 		}
 	}
 	return false
+}
+
+const maxChainDepth = 3
+
+// titleVariations generates alternative search titles by stripping
+// season markers and common suffixes, to improve MDBList search matches.
+func titleVariations(title string) []string {
+	seen := map[string]bool{}
+	var add func(string)
+	add = func(t string) {
+		if t != "" && !seen[t] {
+			seen[t] = true
+		}
+	}
+
+	add(title)
+
+	// Strip trailing patterns like "Season N", "Part N", "Nst/nd/rd/th STAGE"
+	repl := []struct {
+		re   string
+		repl string
+	}{
+		{`\s+\d+(st|nd|rd|th)\s+STAGE.*$`, ""},
+		{`\s+Season\s+\d+.*$`, ""},
+		{`\s+Part\s+\d+.*$`, ""},
+		{`\s+Cour\s+\d+.*$`, ""},
+		{`\s+[IVX]+$`, ""},
+		{`\s*\(202\d\)`, ""},
+		{`\s*~[^~]*~$`, ""},
+		{`^【[^】]+】`, ""},
+	}
+	for _, r := range repl {
+		re := regexp.MustCompile(r.re)
+		add(strings.TrimSpace(re.ReplaceAllString(title, r.repl)))
+	}
+
+	// Also try shorter forms: strip leading subtitle-like segments
+	parts := strings.SplitN(title, ":", 2)
+	if len(parts) == 2 {
+		add(strings.TrimSpace(parts[1]))
+	}
+
+	results := make([]string, 0, len(seen))
+	for t := range seen {
+		results = append(results, t)
+	}
+	return results
+}
+
+// resolveChainFallback follows PREQUEL/PARENT relations recursively when
+// a show's direct MAL ID and its immediate relations aren't in MDBList.
+// Returns a provider ID map if found, nil otherwise.
+func (s *Syncer) resolveChainFallback(ctx context.Context, show anilist.Show, malInfoMap map[int]mdblist.MediaInfo) map[string]any {
+	if s.anilist == nil || len(s.cfg.FallbackRelationTypes) == 0 {
+		return nil
+	}
+
+	seen := map[int]bool{}
+
+	var trace func(malID int, depth int) map[string]any
+	trace = func(malID int, depth int) map[string]any {
+		if malID <= 0 || seen[malID] || depth >= maxChainDepth {
+			return nil
+		}
+		seen[malID] = true
+
+		// Check if this MAL ID is in MDBList
+		if info, ok := malInfoMap[malID]; ok {
+			id := map[string]any{}
+			if info.IDs.IMDB != "" {
+				id["imdb"] = info.IDs.IMDB
+			} else if info.IDs.TMDB != 0 {
+				id["tmdb"] = info.IDs.TMDB
+			} else if info.IDs.TVDB != 0 {
+				id["tvdb"] = info.IDs.TVDB
+			}
+			if len(id) > 0 {
+				return id
+			}
+		}
+
+		// Not in batch lookup — query AniList for this show's relations
+		parent, err := s.anilist.FetchShowByMAL(ctx, malID)
+		if err != nil || parent == nil {
+			return nil
+		}
+
+		// Try each relation type
+		for _, relID := range parent.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
+			if relID == malID || seen[relID] {
+				continue
+			}
+			if result := trace(relID, depth+1); result != nil {
+				return result
+			}
+		}
+
+		return nil
+	}
+
+	for _, relID := range show.RelationMALIDsByType(s.cfg.FallbackRelationTypes) {
+		if relID == 0 || (show.IDMal != nil && relID == *show.IDMal) {
+			continue
+		}
+		if result := trace(relID, 1); result != nil {
+			return result
+		}
+	}
+
+	return nil
 }
 
 // New creates a new Syncer.
@@ -473,12 +584,28 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 			}
 		}
 
+		// Not found by ID or one-level relation — try recursive chain
+		if id := s.resolveChainFallback(ctx, it.show, malInfoMap); id != nil {
+			mdbItems = append(mdbItems, mdbItem{id: id, title: displayTitle})
+			items[i].found = true
+			foundFallback++
+			slog.Debug("matched via recursive chain fallback",
+				"title", displayTitle)
+			continue
+		}
+
 		// Not found by ID or relation — try title search via MDBList
 		if s.mdblist != nil {
-			searchResult, searchErr := s.mdblist.SearchByTitle(ctx, displayTitle)
-			if searchErr != nil {
-				slog.Debug("title search failed", "title", displayTitle, "error", searchErr)
-			} else if searchResult != nil {
+			tryTitles := titleVariations(displayTitle)
+			for _, t := range tryTitles {
+				searchResult, searchErr := s.mdblist.SearchByTitle(ctx, t)
+				if searchErr != nil {
+					slog.Debug("title search failed", "title", t, "error", searchErr)
+					continue
+				}
+				if searchResult == nil {
+					continue
+				}
 				id := mdblist.ProviderIDsFromSearch(*searchResult)
 				if len(id) > 0 {
 					mdbItems = append(mdbItems, mdbItem{id: id, title: displayTitle})
@@ -486,10 +613,13 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 					foundSearch++
 					slog.Debug("matched via title search",
 						"title", displayTitle,
-						"search_result", searchResult.Title,
-						"provider", id)
+						"search_query", t,
+						"search_result", searchResult.Title)
 					continue
 				}
+			}
+			if items[i].found {
+				continue
 			}
 		}
 

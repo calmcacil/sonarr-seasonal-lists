@@ -262,39 +262,46 @@ func (c *Client) DeleteAndRecreate(ctx context.Context, listID int, name, descri
 
 // BatchLookupByMAL looks up media by a list of MAL IDs.
 // Returns a map of malID -> MediaInfo for found items (unfound IDs are omitted).
+const batchLookupSize = 15
+
 func (c *Client) BatchLookupByMAL(ctx context.Context, malIDs []int) (map[int]MediaInfo, error) {
 	if len(malIDs) == 0 {
 		return map[int]MediaInfo{}, nil
 	}
 
-	c.throttle()
+	resultMap := make(map[int]MediaInfo, len(malIDs))
 
-	// Convert MAL IDs to strings for the API
-	idStrs := make([]string, len(malIDs))
-	for i, id := range malIDs {
-		idStrs[i] = fmt.Sprintf("%d", id)
-	}
+	for i := 0; i < len(malIDs); i += batchLookupSize {
+		end := i + batchLookupSize
+		if end > len(malIDs) {
+			end = len(malIDs)
+		}
+		batch := malIDs[i:end]
 
-	payload := map[string]any{
-		"ids": idStrs,
-	}
+		c.throttle()
 
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return nil, fmt.Errorf("marshal payload: %w", err)
-	}
+		idStrs := make([]string, len(batch))
+		for j, id := range batch {
+			idStrs[j] = fmt.Sprintf("%d", id)
+		}
 
-	u := fmt.Sprintf("%s/mal/show?apikey=%s", apiBase, url.QueryEscape(c.apiKey))
+		payload := map[string]any{"ids": idStrs}
+		body, err := json.Marshal(payload)
+		if err != nil {
+			return nil, fmt.Errorf("marshal payload: %w", err)
+		}
 
-	var results []MediaInfo
-	if err := c.doRequest(ctx, http.MethodPost, u, body, &results); err != nil {
-		return nil, fmt.Errorf("batch lookup: %w", err)
-	}
+		u := fmt.Sprintf("%s/mal/show?apikey=%s", apiBase, url.QueryEscape(c.apiKey))
 
-	resultMap := make(map[int]MediaInfo, len(results))
-	for _, m := range results {
-		if m.IDs.MAL != 0 {
-			resultMap[m.IDs.MAL] = m
+		var results []MediaInfo
+		if err := c.doRequest(ctx, http.MethodPost, u, body, &results); err != nil {
+			return nil, fmt.Errorf("batch lookup: %w", err)
+		}
+
+		for _, m := range results {
+			if m.IDs.MAL != 0 {
+				resultMap[m.IDs.MAL] = m
+			}
 		}
 	}
 

@@ -253,6 +253,62 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 	return shows, nil
 }
 
+// chainQuery fetches relations for a show by MAL ID, used for recursive fallback chains.
+const chainQuery = `query($idMal: Int) {
+  Media(idMal: $idMal, type: ANIME) {
+    id
+    idMal
+    title { romaji english }
+    relations {
+      edges {
+        node { id idMal title { romaji english } }
+        relationType
+      }
+    }
+  }
+}`
+
+// chainResponse wraps the single-media GraphQL response for chain queries.
+type chainResponse struct {
+	Data struct {
+		Media *Show `json:"Media"`
+	} `json:"data"`
+	Errors []graphqlError `json:"errors,omitempty"`
+}
+
+// FetchShowByMAL fetches a single show (with relations) by its MyAnimeList ID.
+// Returns nil if the MAL ID doesn't exist on AniList.
+func (c *Client) FetchShowByMAL(ctx context.Context, malID int) (*Show, error) {
+	c.throttle()
+
+	payload := map[string]any{
+		"query": chainQuery,
+		"variables": map[string]any{
+			"idMal": malID,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var resp chainResponse
+	if err := c.doRequest(ctx, body, &resp); err != nil {
+		return nil, fmt.Errorf("fetch MAL %d: %w", malID, err)
+	}
+
+	if len(resp.Errors) > 0 {
+		msgs := make([]string, len(resp.Errors))
+		for i, e := range resp.Errors {
+			msgs[i] = e.Message
+		}
+		return nil, fmt.Errorf("AniList GraphQL errors: %s", strings.Join(msgs, "; "))
+	}
+
+	return resp.Data.Media, nil
+}
+
 // Ping checks connectivity to the AniList API by fetching a single result.
 func (c *Client) Ping(ctx context.Context) error {
 	c.throttle()
