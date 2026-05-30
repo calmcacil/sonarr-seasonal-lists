@@ -160,6 +160,43 @@ func (s *Syncer) hasExcludedTag(show anilist.Show) bool {
 
 const maxChainDepth = 3
 
+// stopWords are common words stripped from keyword relevance checks.
+var stopWords = map[string]bool{
+	"the": true, "a": true, "an": true, "of": true, "in": true, "to": true,
+	"and": true, "or": true, "is": true, "are": true, "it": true, "be": true,
+	"season": true, "part": true, "cour": true, "stage": true, "final": true,
+	"vol": true, "vs": true,
+}
+
+// isAcronym returns true for short uppercase words like "MF", "TV", "DJ".
+func isAcronym(w string) bool {
+	if len(w) < 2 || len(w) > 5 {
+		return false
+	}
+	for _, r := range w {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
+}
+
+// searchResultRelevant returns true if the search result title shares
+// at least the first significant keyword with the query, preventing false
+// positives where MDBList returns unrelated results like "Season B Season"
+// for "Fire Force Season 3 Part 2".
+func searchResultRelevant(query, result string) bool {
+	qWords := strings.Fields(query)
+	rLower := strings.ToLower(result)
+	for _, w := range qWords {
+		lower := strings.ToLower(w)
+		if isAcronym(w) || (len(lower) > 2 && !stopWords[lower]) {
+			return strings.Contains(rLower, lower) || strings.Contains(rLower, w)
+		}
+	}
+	return true
+}
+
 // titleVariations generates alternative search titles by stripping
 // season markers and common suffixes, to improve MDBList search matches.
 func titleVariations(title string) []string {
@@ -614,6 +651,15 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 					continue
 				}
 				if searchResult == nil {
+					continue
+				}
+				// Verify the result is relevant — reject if no significant
+				// keyword overlap (avoids false positives like "Season B Season"
+				// matching "Fire Force Season 3 Part 2").
+				if !searchResultRelevant(t, searchResult.Title) {
+					slog.Debug("rejected irrelevant title search result",
+						"query", t,
+						"result", searchResult.Title)
 					continue
 				}
 				id := mdblist.ProviderIDsFromSearch(*searchResult)
