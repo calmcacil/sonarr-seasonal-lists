@@ -213,7 +213,7 @@ func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) 
 
 	syncer := sync.New(aniClient, mdbClient, syncCfg)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	years := cfg.AniList.YearsOrDefault()
