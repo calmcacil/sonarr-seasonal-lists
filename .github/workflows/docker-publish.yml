@@ -6,20 +6,22 @@ on:
     paths:
       - 'cmd/**'
       - 'internal/**'
-      - 'Dockerfile'
+      - 'Dockerfile*'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/docker-publish.yml'
+      - '.goreleaser.yaml'
     tags: ["v*"]
   pull_request:
     branches: [main]
     paths:
       - 'cmd/**'
       - 'internal/**'
-      - 'Dockerfile'
+      - 'Dockerfile*'
       - 'go.mod'
       - 'go.sum'
       - '.github/workflows/docker-publish.yml'
+      - '.goreleaser.yaml'
 
 env:
   REGISTRY: ghcr.io
@@ -50,21 +52,62 @@ jobs:
       - name: Build
         run: go build ./cmd/anilistgen
 
-  # Docker build + publish runs only on push to main or version tags.
-  build:
+  # Release binaries, Docker images, and GitHub release via goreleaser.
+  # Triggered by tag pushes (auto-created by the svu step on main branch pushes).
+  release:
     needs: [test]
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
-      contents: write    # needed for auto-tagging
+      contents: write
       packages: write
 
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # full history + tags for svu
-          # Use the GITHUB_TOKEN so auto-tag pushes don't loop
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Auto-tag new versions on main branch pushes using conventional commits.
+  tag:
+    needs: [test]
+    if: github.event_name == 'push' && github.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Go
@@ -78,87 +121,23 @@ jobs:
       - name: Determine version
         id: version
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            # Tag push: validate against svu next — refuse stale/backdated tags
-            next="$(svu next)"
-            tag="${GITHUB_REF#refs/tags/}"
-            echo "requested=${tag}" >> "$GITHUB_OUTPUT"
-            if [ "$tag" != "$next" ]; then
-              echo "ERROR: refusing to build tag ${tag} — expected next version is ${next}"
-              echo "Delete the tag and re-tag with ${next}, or push the commits that"
-              echo "would bump the version to ${tag}."
-              exit 1
-            fi
-            echo "version=${tag}" >> "$GITHUB_OUTPUT"
+          current="$(svu current)"
+          next="$(svu next)"
+          echo "current=${current}" >> "$GITHUB_OUTPUT"
+          echo "next=${next}" >> "$GITHUB_OUTPUT"
+          if [ "$current" = "$next" ]; then
+            echo "No version bump needed (current=${current}, next=${next})"
+            echo "version_unchanged=true" >> "$GITHUB_OUTPUT"
           else
-            # Branch push: determine next version from conventional commits
-            current="$(svu current)"
-            next="$(svu next)"
-            echo "current=${current}" >> "$GITHUB_OUTPUT"
-            echo "next=${next}" >> "$GITHUB_OUTPUT"
-            if [ "$current" = "$next" ]; then
-              echo "No version bump needed (current=${current}, next=${next})"
-              echo "version_unchanged=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "version=${next}" >> "$GITHUB_OUTPUT"
-              echo "version_unchanged=false" >> "$GITHUB_OUTPUT"
-            fi
+            echo "version=${next}" >> "$GITHUB_OUTPUT"
+            echo "version_unchanged=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Auto-tag new version
-        if: |
-          github.ref_type == 'branch' &&
-          steps.version.outputs.version_unchanged == 'false'
+        if: steps.version.outputs.version_unchanged == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "${{ steps.version.outputs.version }}" \
             -m "release: ${{ steps.version.outputs.version }}"
           git push origin "${{ steps.version.outputs.version }}"
-
-      # Skip the rest if no version bump is needed (e.g. docs-only commits
-      # that happened to touch a path-filtered file).
-      - name: Skip build when version hasn't changed
-        if: steps.version.outputs.version_unchanged == 'true'
-        run: |
-          echo "No version bump — nothing to publish. Skipping."
-
-      - name: Set up Docker Buildx
-        if: steps.version.outputs.version_unchanged != 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        if: github.event_name != 'pull_request' && steps.version.outputs.version_unchanged != 'true'
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata for Docker
-        if: steps.version.outputs.version_unchanged != 'true'
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix=,suffix=,format=short
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push Docker image
-        if: steps.version.outputs.version_unchanged != 'true'
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: ${{ github.event_name != 'pull_request' }}
-          platforms: linux/amd64,linux/arm64
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
