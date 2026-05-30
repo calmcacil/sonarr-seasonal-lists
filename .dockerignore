@@ -1,0 +1,9 @@
+.git/
+.gitignore
+AGENTS.md
+README.md
+specs/
+deploy/
+docker-compose.yml
+anilistgen.yaml
+anilistgen.yaml.example
