@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -146,7 +148,11 @@ func listCachePath(stateFile string) string {
 	if stateFile == "" {
 		return ""
 	}
-	return strings.TrimSuffix(stateFile, ".lastrun") + "_listcache.json"
+	dir := filepath.Dir(stateFile)
+	base := filepath.Base(stateFile)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	return filepath.Join(dir, name+"_listcache.json")
 }
 
 // runOneshot processes all configured seasons once and exits.
@@ -162,7 +168,7 @@ func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) 
 	}
 	defer closeLog()
 
-	apiKey := resolveAPIKey(cfg)
+	apiKey := cfg.MDBListAPIKey
 
 	if !dryRun && outputDir == "" && apiKey == "" {
 		return newExitError(
@@ -231,7 +237,7 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 		return newExitError("interval must be non-zero in daemon mode; set it in "+cfgPath, 1)
 	}
 
-	apiKey := resolveAPIKey(cfg)
+	apiKey := cfg.MDBListAPIKey
 	if apiKey == "" {
 		return newExitError(
 			"MDBList API key required. Set mdblist_api_key in config or MDBLIST_API_KEY env var.",
@@ -293,7 +299,7 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 		}
 
 		// Rebuild syncer with new config
-		apiKey := resolveAPIKey(newCfg)
+		apiKey := newCfg.MDBListAPIKey
 		var mdbClient *mdblist.Client
 		if apiKey != "" {
 			mdbClient = mdblist.New(apiKey)
@@ -318,6 +324,8 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 		slog.Info("config reloaded", "config", cfgPath)
 	}
 
+	var shuttingDown bool
+
 	for {
 		if mustSleep {
 			mustSleep = false
@@ -329,8 +337,8 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 					mustSleep = true // restart sleep after reload
 					continue
 				}
-				slog.Info("received signal, shutting down", "signal", sig)
-				return nil
+				slog.Info("received signal, completing current cycle then shutting down", "signal", sig)
+				shuttingDown = true
 			case <-time.After(cfg.Interval.Duration):
 			}
 		} else {
@@ -342,64 +350,84 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 					reloadConfig()
 					continue
 				}
-				slog.Info("received signal, shutting down", "signal", sig)
-				return nil
+				slog.Info("received signal, completing current cycle then shutting down", "signal", sig)
+				shuttingDown = true
 			case <-ctx.Done():
-				slog.Info("context cancelled, shutting down")
-				return ctx.Err()
+				slog.Info("context cancelled, completing current cycle then shutting down")
+				shuttingDown = true
 			case <-time.After(cfg.Interval.Duration):
 			}
 		}
 
 		// Sanity check: skip if last run was within MinInterval
 		if !checkLastRun(cfg.StateFile, config.MinInterval) {
+			if shuttingDown {
+				slog.Info("last run too recent, skipping cycle and shutting down")
+				return nil
+			}
 			slog.Debug("skipping sync — last run too recent (less than MinInterval)")
 			continue
 		}
 
-		years := cfg.AniList.YearsOrDefault()
-		seasons := cfg.AniList.Season()
-
-		slog.Info("sync cycle starting",
-			"years", years,
-			"seasons", len(seasons))
-
-		var allResults []sync.Result
-		cycleCtx, cycleCancel := context.WithTimeout(ctx, 5*time.Minute)
-		for _, year := range years {
-			results := syncer.SyncAll(cycleCtx, seasons, year)
-			allResults = append(allResults, results...)
-		}
-		cycleCancel()
-
-		for _, r := range allResults {
-			if r.Error != nil {
-				slog.Error("sync failed",
-					"season", r.Season,
-					"year", r.Year,
-					"error", r.Error)
-			} else {
-				status := "created"
-				if r.Updated {
-					status = "updated"
-				} else {
-					status = "unchanged"
+		// Panic recovery per cycle
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					slog.Error("daemon cycle panicked, recovering",
+						"panic", r,
+						"stack", string(debug.Stack()))
 				}
-				slog.Info("sync result",
-					"season", r.Season,
-					"year", r.Year,
-					"list", r.ListTitle,
-					"shows", r.ShowCount,
-					"status", status,
-					"url", r.ListURL)
-			}
-		}
+			}()
 
-		if err := collectErrors(allResults); err != nil {
-			slog.Warn("sync cycle had errors", "error", err)
-		} else {
-			slog.Info("sync cycle completed successfully")
-			writeLastRun(cfg.StateFile)
+			years := cfg.AniList.YearsOrDefault()
+			seasons := cfg.AniList.Season()
+
+			slog.Info("sync cycle starting",
+				"years", years,
+				"seasons", len(seasons))
+
+			var allResults []sync.Result
+			cycleCtx, cycleCancel := context.WithTimeout(ctx, 5*time.Minute)
+			for _, year := range years {
+				results := syncer.SyncAll(cycleCtx, seasons, year)
+				allResults = append(allResults, results...)
+			}
+			cycleCancel()
+
+			for _, r := range allResults {
+				if r.Error != nil {
+					slog.Error("sync failed",
+						"season", r.Season,
+						"year", r.Year,
+						"error", r.Error)
+				} else {
+					status := "created"
+					if r.Updated {
+						status = "updated"
+					} else {
+						status = "unchanged"
+					}
+					slog.Info("sync result",
+						"season", r.Season,
+						"year", r.Year,
+						"list", r.ListTitle,
+						"shows", r.ShowCount,
+						"status", status,
+						"url", r.ListURL)
+				}
+			}
+
+			if err := collectErrors(allResults); err != nil {
+				slog.Warn("sync cycle had errors", "error", err)
+			} else {
+				slog.Info("sync cycle completed successfully")
+				writeLastRun(cfg.StateFile)
+			}
+		}()
+
+		if shuttingDown {
+			slog.Info("sync cycle completed, shutting down")
+			return nil
 		}
 	}
 }
@@ -426,7 +454,7 @@ func runValidate(configPath string, verbose bool) error {
 	fmt.Printf("  Public: %t\n", cfg.MDBList.Public)
 	fmt.Printf("  Log level: %s\n", cfg.Logging.Level)
 
-	apiKey := resolveAPIKey(cfg)
+	apiKey := cfg.MDBListAPIKey
 	if apiKey == "" {
 		fmt.Println("  MDBList API key: not set")
 	} else {
@@ -506,11 +534,6 @@ func setupLogging(cfg *config.Config, verbose bool) (func(), error) {
 		level = "debug"
 	}
 	return logging.Setup(level, cfg.Logging.File)
-}
-
-// resolveAPIKey returns the MDBList API key from config (env overrides already applied).
-func resolveAPIKey(cfg *config.Config) string {
-	return cfg.MDBListAPIKey
 }
 
 // checkLastRun returns true if at least minInterval has elapsed since the last run

@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	apiBase  = "https://graphql.anilist.co"
-	maxRetry = 3
+	apiBase         = "https://graphql.anilist.co"
+	maxRetry        = 3
+	rateLimitDelay  = 500 * time.Millisecond
 )
 
 // RelationEdge represents a related media entry.
@@ -45,6 +46,7 @@ type Show struct {
 	Genres    []string       `json:"genres"`
 	Tags      []Tag          `json:"tags"`
 	Status    string         `json:"status"`
+	StartDate FuzzyDate      `json:"startDate"`
 	Relations *RelationBlock `json:"relations,omitempty"`
 }
 
@@ -104,10 +106,23 @@ func (s Show) HasTag(name string) bool {
 	return false
 }
 
+// FuzzyDate represents a partial date (year, month, day) from AniList.
+type FuzzyDate struct {
+	Year  *int `json:"year"`
+	Month *int `json:"month"`
+	Day   *int `json:"day"`
+}
+
 // Title holds the english and romaji titles.
 type Title struct {
 	English *string `json:"english"`
 	Romaji  *string `json:"romaji"`
+}
+
+// StartedInDecember returns true if the show's start date month is December.
+// Returns false if the month is unknown.
+func (s Show) StartedInDecember() bool {
+	return s.StartDate.Month != nil && *s.StartDate.Month == 12
 }
 
 // DisplayTitle returns the English title if available, falling back to romaji.
@@ -139,6 +154,7 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 			genres
 			tags { name }
 			status
+			startDate { year month day }
 			relations {
 				edges {
 					node {
@@ -153,6 +169,10 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 	}
 }`
 
+type graphqlError struct {
+	Message string `json:"message"`
+}
+
 // graphqlResponse is the top-level response from AniList.
 type graphqlResponse struct {
 	Data struct {
@@ -160,11 +180,13 @@ type graphqlResponse struct {
 			Media []Show `json:"media"`
 		} `json:"Page"`
 	} `json:"data"`
+	Errors []graphqlError `json:"errors,omitempty"`
 }
 
 // Client fetches data from the AniList GraphQL API.
 type Client struct {
-	http *http.Client
+	http     *http.Client
+	lastCall time.Time
 }
 
 // New creates a new AniList client.
@@ -174,10 +196,21 @@ func New() *Client {
 	}
 }
 
+// throttle ensures we don't exceed AniList rate limits.
+func (c *Client) throttle() {
+	elapsed := time.Since(c.lastCall)
+	if elapsed < rateLimitDelay {
+		time.Sleep(rateLimitDelay - elapsed)
+	}
+	c.lastCall = time.Now()
+}
+
 // FetchSeason returns all TV/ONA anime for the given season and year.
 // If includeONA is true, both TV and ONA formats are fetched; otherwise only TV.
 // Results are capped at maxResults.
 func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxResults int, includeONA bool) ([]Show, error) {
+	c.throttle()
+
 	formats := []string{"TV"}
 	if includeONA {
 		formats = append(formats, "ONA")
@@ -204,6 +237,14 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 		return nil, fmt.Errorf("fetch %s %d: %w", season, year, err)
 	}
 
+	if len(resp.Errors) > 0 {
+		msgs := make([]string, len(resp.Errors))
+		for i, e := range resp.Errors {
+			msgs[i] = e.Message
+		}
+		return nil, fmt.Errorf("AniList GraphQL errors: %s", strings.Join(msgs, "; "))
+	}
+
 	shows := resp.Data.Page.Media
 	if shows == nil {
 		shows = []Show{}
@@ -214,6 +255,8 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 
 // Ping checks connectivity to the AniList API by fetching a single result.
 func (c *Client) Ping(ctx context.Context) error {
+	c.throttle()
+
 	query := `{ Page(perPage: 1) { media(type: ANIME) { id } } }`
 	payload := map[string]any{
 		"query":     query,
@@ -264,7 +307,6 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 			lastErr = fmt.Errorf("http request: %w", err)
 			continue
 		}
-
 		if resp.StatusCode == http.StatusTooManyRequests {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("rate limited (attempt %d)", attempt+1)

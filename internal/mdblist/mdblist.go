@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -64,6 +65,7 @@ type Client struct {
 	http     *http.Client
 	apiKey   string
 	lastCall time.Time
+	mu       sync.Mutex
 }
 
 // New creates a new MDBList client.
@@ -76,6 +78,8 @@ func New(apiKey string) *Client {
 
 // throttle ensures we don't exceed MDBList rate limits.
 func (c *Client) throttle() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	elapsed := time.Since(c.lastCall)
 	if elapsed < rateLimit {
 		time.Sleep(rateLimit - elapsed)
@@ -339,9 +343,13 @@ func (c *Client) doRequest(ctx context.Context, method, url string, body []byte,
 			continue
 		}
 
-		if resp.StatusCode >= 400 {
-			lastErr = fmt.Errorf("MDBList error (HTTP %d): %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("MDBList server error (HTTP %d): %s", resp.StatusCode, string(respBody))
 			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("MDBList client error (HTTP %d): %s", resp.StatusCode, string(respBody))
 		}
 
 		if dst != nil {
@@ -391,9 +399,13 @@ func (c *Client) doMutation(ctx context.Context, method, url string, body []byte
 			continue
 		}
 
-		if resp.StatusCode >= 400 {
-			lastErr = fmt.Errorf("MDBList error (HTTP %d): %s", resp.StatusCode, string(respBody))
+		if resp.StatusCode >= 500 {
+			lastErr = fmt.Errorf("MDBList server error (HTTP %d): %s", resp.StatusCode, string(respBody))
 			continue
+		}
+
+		if resp.StatusCode >= 400 {
+			return fmt.Errorf("MDBList client error (HTTP %d): %s", resp.StatusCode, string(respBody))
 		}
 
 		if dst != nil {

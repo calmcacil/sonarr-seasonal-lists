@@ -1,4 +1,4 @@
-name: Build and publish Docker image
+name: CI
 
 on:
   push:
@@ -30,10 +30,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Tests run only on PRs — pushes to main are already-tested merges.
   test:
-    if: |
-      github.ref_type == 'branch' ||
-      (github.ref_type == 'tag' && github.actor != 'github-actions[bot]')
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -53,13 +52,9 @@ jobs:
       - name: Build
         run: go build ./cmd/anilistgen
 
+  # Docker build + publish runs only on push to main or version tags.
   build:
-    needs: [test]
-    # Skip auto-created tags (they were already built by the branch push).
-    # Only build manually-pushed tags and branch pushes.
-    if: |
-      github.ref_type == 'branch' ||
-      (github.ref_type == 'tag' && github.actor != 'github-actions[bot]')
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

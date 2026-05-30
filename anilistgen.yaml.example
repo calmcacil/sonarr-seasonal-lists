@@ -3,8 +3,8 @@
 # MDBList API key (required). Get yours at https://mdblist.com/api
 mdblist_api_key: ""
 
-# How often to run in daemon mode. "0" for one-shot.
-interval: "0"
+# How often to run in daemon mode. "0" for one-shot. Default: 24h
+interval: "24h"
 
 # AniList query settings
 anilist:
