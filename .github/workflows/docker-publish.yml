@@ -78,9 +78,14 @@ jobs:
       - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          registry: ${{ env.REGISTRY }}
+          registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pre-pull base image to cache it locally and avoid Docker Hub
+      # rate limits when buildx tries to pull it during goreleaser.
+      - name: Pre-pull base image
+        run: docker pull gcr.io/distroless/base-debian12:nonroot
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6
