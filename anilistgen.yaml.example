@@ -31,6 +31,19 @@ anilist:
   # Default: true
   winter_overflow: true
 
+  # Fallback relation types to follow when a show's MAL ID isn't found
+  # in MDBList database. The tool follows the relation chain to find a
+  # parent series that MDBList has indexed. Default: ["PREQUEL", "PARENT"]
+  # fallback_relation_types:
+  #   - PREQUEL
+  #   - PARENT
+
+  # AniList content tags to exclude. Shows with any matching tag
+  # (case-insensitive) are skipped. Useful for filtering content.
+  # exclude_tags:
+  #   - "Hentai"
+  #   - "Guro"
+
 # MDBList list settings
 mdblist:
   title_template: "Anime {season} {year}"

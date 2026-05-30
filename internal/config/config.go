@@ -493,6 +493,30 @@ anilist:
   # Include ONA format alongside TV. Default: true
   include_ona: true
 
+  # Merge December-premiering shows from the previous year into WINTER.
+  # When enabled, fetches the prior year's WINTER and merges only
+  # shows that started in December (startDate.month == 12). AniList
+  # assigns calendar year to seasonYear, so a December-premiering show
+  # is tagged under the prior year but belongs in the current winter
+  # viewing list. Disable if you want WINTER to contain only Jan-Mar
+  # premieres. Default: true
+  winter_overflow: true
+
+  # Fallback relation types to follow when a show's MAL ID isn't found
+  # in MDBList database. The tool follows the relation chain (e.g. via
+  # PREQUEL) to find a parent series that MDBList has indexed.
+  # Default: ["PREQUEL", "PARENT"]
+  # fallback_relation_types:
+  #   - PREQUEL
+  #   - PARENT
+
+  # AniList content tags to exclude. Shows with any matching tag
+  # (case-insensitive comparison) are skipped entirely. Useful for
+  # filtering out specific content categories.
+  # exclude_tags:
+  #   - "Hentai"
+  #   - "Guro"
+
 # MDBList list settings
 mdblist:
   # List title template. Supports {season} and {year} placeholders.
