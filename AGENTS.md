@@ -116,7 +116,7 @@ go vet ./...
 
 - **API keys in config** — The config file (`anilistgen.yaml`) is in
   `.gitignore` to prevent accidental commits. Use `anilistgen.yaml.example`
-  as a template. The env var `MDBLIST_API_KEY` can also be used.
+  as a template. The env var `ALG_MDBLIST_API_KEY` can also be used.
 - **No auth on AniList reads** — AniList GraphQL is public, no credentials needed.
 - **MDBList key transmitted as query param** — sent over HTTPS. Rotate if
   accidentally exposed.

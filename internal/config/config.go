@@ -13,7 +13,7 @@ import (
 
 // Config holds the full application configuration loaded from a YAML file.
 type Config struct {
-	// MDBListAPIKey is the MDBList API key. Can also be set via MDBLIST_API_KEY env var.
+	// MDBListAPIKey is the MDBList API key. Can also be set via ALG_MDBLIST_API_KEY env var.
 	MDBListAPIKey string `yaml:"mdblist_api_key"`
 
 	// Interval is how often to run in daemon mode. 0 means one-shot.
@@ -189,7 +189,7 @@ func (c *Config) Validate() error {
 	var errs []string
 
 	if c.MDBListAPIKey == "" {
-		errs = append(errs, "mdblist_api_key is required (set in config or MDBLIST_API_KEY env var)")
+		errs = append(errs, "mdblist_api_key is required (set in config or ALG_MDBLIST_API_KEY env var)")
 	}
 
 	years := c.AniList.YearsOrDefault()
@@ -255,10 +255,7 @@ const envPrefix = "ALG_"
 // Nested fields use underscore separators: ALG_ANILIST_YEAR, ALG_MDBLIST_PUBLIC, etc.
 // List fields (years, seasons, blacklist) use comma-separated values.
 func (c *Config) applyEnvOverrides() {
-	// MDBList API key — also check legacy MDBLIST_API_KEY
 	if v := os.Getenv("ALG_MDBLIST_API_KEY"); v != "" {
-		c.MDBListAPIKey = v
-	} else if v := os.Getenv("MDBLIST_API_KEY"); v != "" {
 		c.MDBListAPIKey = v
 	}
 
@@ -465,7 +462,7 @@ func WriteDefaultConfig(path string) error {
 	content := `# anilistgen configuration
 # See https://github.com/calmcacil/anilistgen for full documentation.
 
-# MDBList API key (required). Can also be set via MDBLIST_API_KEY env var.
+# MDBList API key (required). Can also be set via ALG_MDBLIST_API_KEY env var.
 mdblist_api_key: ""
 
 # How often to run in daemon mode. Parsed as Go duration (e.g. "24h", "12h").

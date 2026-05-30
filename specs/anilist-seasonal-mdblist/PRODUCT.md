@@ -36,7 +36,7 @@ Custom List sources.
 ### Config file structure
 
 ```yaml
-# MDBList API key (required). Can also be set via MDBLIST_API_KEY env var.
+# MDBList API key (required). Can also be set via ALG_MDBLIST_API_KEY env var.
 mdblist_api_key: ""
 
 # How often to run in daemon mode. Parsed as Go duration.
@@ -120,7 +120,6 @@ separators:
 | Env var | Config path |
 |---|---|
 | `ALG_MDBLIST_API_KEY` | `mdblist_api_key` |
-| `MDBLIST_API_KEY` | legacy fallback for above |
 | `ALG_INTERVAL` | `interval` |
 | `ALG_RUN_ON_START` | `run_on_start` |
 | `ALG_STATE_FILE` | `state_file` |

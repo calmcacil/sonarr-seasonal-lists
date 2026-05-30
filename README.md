@@ -72,7 +72,7 @@ Run `anilistgen init-config` to generate a documented template. Full reference:
 
 ```yaml
 # ── Required ──────────────────────────────────────────────────────────
-mdblist_api_key: ""        # MDBList API key (or set MDBLIST_API_KEY env var)
+mdblist_api_key: ""        # MDBList API key (or set ALG_MDBLIST_API_KEY env var)
 
 # ── Schedule ──────────────────────────────────────────────────────────
 interval: "168h"           # Daemon interval: "168h" (week), "24h" (day), "0" (oneshot)
@@ -123,7 +123,6 @@ Useful for Docker, CI/CD, or containers.
 | Env var | Maps to | Default |
 |---|---|---|
 | `ALG_MDBLIST_API_KEY` | `mdblist_api_key` | `""` |
-| `MDBLIST_API_KEY` | same (legacy fallback) | `""` |
 | `ALG_INTERVAL` | `interval` | `168h` |
 | `ALG_RUN_ON_START` | `run_on_start` | `true` |
 | `ALG_STATE_FILE` | `state_file` | `/tmp/anilistgen.lastrun` |

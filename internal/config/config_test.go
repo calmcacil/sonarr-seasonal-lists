@@ -421,37 +421,6 @@ func TestApplyEnvOverrides_MDBListAPIKey(t *testing.T) {
 	}
 }
 
-func TestApplyEnvOverrides_LegacyKey(t *testing.T) {
-	cfg := &Config{}
-	setenv := func(key, val string) {
-		os.Setenv(key, val)
-		t.Cleanup(func() { os.Unsetenv(key) })
-	}
-	setenv("MDBLIST_API_KEY", "legacy-key-456")
-	// ALG_ prefix should take precedence if also set
-	setenv("ALG_MDBLIST_API_KEY", "")
-
-	cfg.applyEnvOverrides()
-	if cfg.MDBListAPIKey != "legacy-key-456" {
-		t.Errorf("expected 'legacy-key-456', got %q", cfg.MDBListAPIKey)
-	}
-}
-
-func TestApplyEnvOverrides_ALGPrefersOverLegacy(t *testing.T) {
-	cfg := &Config{}
-	setenv := func(key, val string) {
-		os.Setenv(key, val)
-		t.Cleanup(func() { os.Unsetenv(key) })
-	}
-	setenv("ALG_MDBLIST_API_KEY", "alg-first")
-	setenv("MDBLIST_API_KEY", "legacy-second")
-
-	cfg.applyEnvOverrides()
-	if cfg.MDBListAPIKey != "alg-first" {
-		t.Errorf("expected 'alg-first' (ALG_ pref), got %q", cfg.MDBListAPIKey)
-	}
-}
-
 func TestApplyEnvOverrides_Interval(t *testing.T) {
 	cfg := &Config{}
 	os.Setenv("ALG_INTERVAL", "30m")

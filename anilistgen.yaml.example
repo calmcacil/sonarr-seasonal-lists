@@ -1,6 +1,7 @@
 # anilistgen configuration
 
 # MDBList API key (required). Get yours at https://mdblist.com/api
+# Can also be set via ALG_MDBLIST_API_KEY env var.
 mdblist_api_key: ""
 
 # How often to run in daemon mode. "0" for one-shot. Default: 24h

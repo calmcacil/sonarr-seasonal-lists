@@ -172,7 +172,7 @@ func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) 
 
 	if !dryRun && outputDir == "" && apiKey == "" {
 		return newExitError(
-			"MDBList API key required. Set mdblist_api_key in config or MDBLIST_API_KEY env var.",
+			"MDBList API key required. Set mdblist_api_key in config or ALG_MDBLIST_API_KEY env var.",
 			1)
 	}
 
@@ -240,7 +240,7 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 	apiKey := cfg.MDBListAPIKey
 	if apiKey == "" {
 		return newExitError(
-			"MDBList API key required. Set mdblist_api_key in config or MDBLIST_API_KEY env var.",
+			"MDBList API key required. Set mdblist_api_key in config or ALG_MDBLIST_API_KEY env var.",
 			1)
 	}
 
