@@ -155,6 +155,19 @@ func listCachePath(stateFile string) string {
 	return filepath.Join(dir, name+"_listcache.json")
 }
 
+// manualMatchPath derives the manual-match file path from the state-file path.
+// e.g. /tmp/anilistgen.lastrun → /tmp/anilistgen_manual.yml
+func manualMatchPath(stateFile string) string {
+	if stateFile == "" {
+		return ""
+	}
+	dir := filepath.Dir(stateFile)
+	base := filepath.Base(stateFile)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	return filepath.Join(dir, name+"_manual.yml")
+}
+
 // runOneshot processes all configured seasons once and exits.
 func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) error {
 	cfg, _, err := config.Load(configPath)
@@ -194,6 +207,7 @@ func runOneshot(configPath string, dryRun bool, outputDir string, verbose bool) 
 		FallbackRelationTypes: cfg.AniList.FallbackRelationTypes,
 		ExcludeTags:           cfg.AniList.ExcludeTags,
 		ListCachePath:         listCachePath(cfg.StateFile),
+		ManualMatchFile:       manualMatchPath(cfg.StateFile),
 	}
 
 	syncer := sync.New(aniClient, mdbClient, syncCfg)
@@ -258,6 +272,7 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 		FallbackRelationTypes: cfg.AniList.FallbackRelationTypes,
 		ExcludeTags:           cfg.AniList.ExcludeTags,
 		ListCachePath:         listCachePath(cfg.StateFile),
+		ManualMatchFile:       manualMatchPath(cfg.StateFile),
 	}
 
 	syncer := sync.New(aniClient, mdbClient, syncCfg)
@@ -316,6 +331,7 @@ func runDaemon(configPath string, dryRun bool, outputDir string, verbose bool) e
 			FallbackRelationTypes: newCfg.AniList.FallbackRelationTypes,
 			ExcludeTags:           newCfg.AniList.ExcludeTags,
 			ListCachePath:         listCachePath(newCfg.StateFile),
+			ManualMatchFile:       manualMatchPath(newCfg.StateFile),
 		}
 
 		cfg = newCfg
