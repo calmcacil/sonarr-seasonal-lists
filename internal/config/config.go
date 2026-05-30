@@ -62,6 +62,9 @@ type AniListConfig struct {
 	// ExcludeTags is a list of AniList tag names to exclude.
 	// Shows with any matching tag (case-insensitive) are skipped.
 	ExcludeTags []string `yaml:"exclude_tags"`
+	// AheadMonths skips shows whose start date is more than this many months
+	// in the future. Default: 3. Set to 0 to disable.
+	AheadMonths int `yaml:"ahead_months"`
 }
 
 // MDBListConfig holds list creation settings.
@@ -169,6 +172,9 @@ func (c *Config) FillDefaults() {
 	}
 	if c.AniList.FallbackRelationTypes == nil {
 		c.AniList.FallbackRelationTypes = []string{"PREQUEL", "PARENT"}
+	}
+	if c.AniList.AheadMonths == 0 {
+		c.AniList.AheadMonths = 3
 	}
 	if c.MDBList.TitleTemplate == "" {
 		c.MDBList.TitleTemplate = DefaultTitleTemplate

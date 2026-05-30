@@ -180,6 +180,7 @@ type SyncConfig struct {
 	MaxPerSeason            int
 	IncludeONA              bool
 	WinterOverflow          bool
+	AheadMonths             int
 	TitleTemplate           string
 	DescriptionTemplate     string
 	Public                  bool
@@ -504,9 +505,9 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 			"season", season, "year", year, "got", len(shows), "max", s.cfg.MaxPerSeason)
 	}
 
-	// Filter out shows with duration <= 10 minutes (shorts, music videos, etc.)
+	// Filter out shows too far in the future (not yet indexed by MDBList)
 	var filtered []anilist.Show
-	var skippedDuration, skippedExcluded int
+	var skippedDuration, skippedExcluded, skippedFuture int
 	for _, show := range shows {
 		title := show.DisplayTitle()
 		idMal := 0
@@ -538,16 +539,26 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 			continue
 		}
 
+		// Skip shows too far in the future (likely not indexed by MDBList yet)
+		if s.cfg.AheadMonths > 0 && !show.IsWithinMonths(s.cfg.AheadMonths) {
+			skippedFuture++
+			slog.Debug("skipped show (too far in the future)",
+				"title", title,
+				"startDate", show.StartDate)
+			continue
+		}
+
 		filtered = append(filtered, show)
 	}
 	shows = filtered
 
-	totalSkipped := skippedDuration + skippedExcluded
+	totalSkipped := skippedDuration + skippedExcluded + skippedFuture
 	if totalSkipped > 0 {
 		slog.Info("filtered shows",
 			"season", season, "year", year,
 			"skipped_duration", skippedDuration,
 			"skipped_excluded", skippedExcluded,
+			"skipped_future", skippedFuture,
 			"remaining", len(shows))
 	}
 
@@ -850,6 +861,19 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 			"fallback_matches", foundFallback,
 			"title_search_matches", foundSearch,
 			"total", len(shows))
+	}
+
+	// Skip creating/updating lists with no items
+	if len(mdbItems) == 0 {
+		slog.Info("no items to add, skipping list",
+			"title", title,
+			"season", season,
+			"year", year)
+		return Result{
+			Season:    season,
+			Year:      year,
+			ListTitle: title,
+		}
 	}
 
 	if existing != nil {

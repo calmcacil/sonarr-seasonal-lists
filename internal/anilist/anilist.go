@@ -125,6 +125,19 @@ func (s Show) StartedInDecember() bool {
 	return s.StartDate.Month != nil && *s.StartDate.Month == 12
 }
 
+// IsWithinMonths returns true if the show's start date is within the given
+// number of months from now. If the start date is unknown, returns true
+// (don't filter out shows with unknown dates).
+func (s Show) IsWithinMonths(months int) bool {
+	if s.StartDate.Year == nil || s.StartDate.Month == nil {
+		return true
+	}
+	now := time.Now()
+	start := time.Date(*s.StartDate.Year, time.Month(*s.StartDate.Month), 1, 0, 0, 0, 0, time.UTC)
+	cutoff := start.Sub(now)
+	return cutoff <= 30*24*time.Hour*time.Duration(months)
+}
+
 // DisplayTitle returns the English title if available, falling back to romaji.
 func (s Show) DisplayTitle() string {
 	if s.Title.English != nil && *s.Title.English != "" {
