@@ -281,10 +281,37 @@ const chainQuery = `query($idMal: Int) {
   }
 }`
 
+// batchChainQuery fetches relations for multiple shows in one call.
+const batchChainQuery = `query($ids: [Int]) {
+  Page(page: 1, perPage: 50) {
+    media(idMal_in: $ids, type: ANIME) {
+      id
+      idMal
+      title { romaji english }
+      relations {
+        edges {
+          node { id idMal title { romaji english } }
+          relationType
+        }
+      }
+    }
+  }
+}`
+
 // chainResponse wraps the single-media GraphQL response for chain queries.
 type chainResponse struct {
 	Data struct {
 		Media *Show `json:"Media"`
+	} `json:"data"`
+	Errors []graphqlError `json:"errors,omitempty"`
+}
+
+// batchChainResponse wraps the page-based response for batch chain queries.
+type batchChainResponse struct {
+	Data struct {
+		Page struct {
+			Media []Show `json:"media"`
+		} `json:"Page"`
 	} `json:"data"`
 	Errors []graphqlError `json:"errors,omitempty"`
 }
@@ -320,6 +347,49 @@ func (c *Client) FetchShowByMAL(ctx context.Context, malID int) (*Show, error) {
 	}
 
 	return resp.Data.Media, nil
+}
+
+// BatchFetchByMAL fetches relations for multiple shows in a single call.
+// Returns a map of MAL ID → Show for found items.
+func (c *Client) BatchFetchByMAL(ctx context.Context, malIDs []int) (map[int]Show, error) {
+	if len(malIDs) == 0 {
+		return map[int]Show{}, nil
+	}
+
+	c.throttle()
+
+	payload := map[string]any{
+		"query": batchChainQuery,
+		"variables": map[string]any{
+			"ids": malIDs,
+		},
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var resp batchChainResponse
+	if err := c.doRequest(ctx, body, &resp); err != nil {
+		return nil, fmt.Errorf("batch fetch MAL: %w", err)
+	}
+
+	if len(resp.Errors) > 0 {
+		msgs := make([]string, len(resp.Errors))
+		for i, e := range resp.Errors {
+			msgs[i] = e.Message
+		}
+		return nil, fmt.Errorf("AniList GraphQL errors: %s", strings.Join(msgs, "; "))
+	}
+
+	result := make(map[int]Show, len(resp.Data.Page.Media))
+	for _, show := range resp.Data.Page.Media {
+		if show.IDMal != nil && *show.IDMal > 0 {
+			result[*show.IDMal] = show
+		}
+	}
+	return result, nil
 }
 
 // Ping checks connectivity to the AniList API by fetching a single result.
