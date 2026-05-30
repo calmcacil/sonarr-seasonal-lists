@@ -35,6 +35,8 @@ func capitalize(s string) string {
 	return strings.ToUpper(s[:1]) + strings.ToLower(s[1:])
 }
 
+const mdbBatchSize = 200
+
 // mdbItem represents a resolved item for adding to MDBList.
 type mdbItem struct {
 	id    map[string]any // provider ID for MDBList API
@@ -50,9 +52,9 @@ type Result struct {
 	ShowCount        int
 	TotalInDB        int // shows found in MDBList's database
 	FoundViaFallback int // shows matched via relation fallback
-	Skipped          int // shows skipped (not in MDBList)
+	NotFoundInDB     int // shows not found in MDBList database
 	SkippedDuration  int // shows skipped (duration <= 10 min)
-	SkippedBlacklist int // shows skipped (blacklisted)
+	SkippedExcluded  int // shows skipped (blacklisted or excluded by tag)
 	Created          bool
 	Updated          bool
 	Error            error
@@ -224,7 +226,7 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 
 	// Filter out shows with duration <= 10 minutes (shorts, music videos, etc.)
 	var filtered []anilist.Show
-	var skippedDuration, skippedBlacklist int
+	var skippedDuration, skippedExcluded int
 	for _, show := range shows {
 		title := show.DisplayTitle()
 		idMal := 0
@@ -241,7 +243,7 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 		}
 
 		if s.cfg.isBlacklisted(title, idMal) {
-			skippedBlacklist++
+			skippedExcluded++
 			slog.Debug("skipped show (blacklisted)",
 				"title", title,
 				"idMal", idMal)
@@ -249,7 +251,7 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 		}
 
 		if s.hasExcludedTag(show) {
-			skippedBlacklist++
+			skippedExcluded++
 			slog.Debug("skipped show (excluded tag)",
 				"title", title,
 				"tags", show.Tags)
@@ -260,12 +262,12 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 	}
 	shows = filtered
 
-	totalSkipped := skippedDuration + skippedBlacklist
+	totalSkipped := skippedDuration + skippedExcluded
 	if totalSkipped > 0 {
 		slog.Info("filtered shows",
 			"season", season, "year", year,
 			"skipped_duration", skippedDuration,
-			"skipped_blacklist", skippedBlacklist,
+			"skipped_excluded", skippedExcluded,
 			"remaining", len(shows))
 	}
 
@@ -286,7 +288,6 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 			Year:      year,
 			ListTitle: title,
 			ShowCount: len(shows),
-			Skipped:   skippedDuration,
 		}
 	}
 
@@ -294,8 +295,7 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 	result := s.syncMDBList(ctx, season, year, title, desc, shows)
 	// Merge filter stats
 	result.SkippedDuration = skippedDuration
-	result.SkippedBlacklist = skippedBlacklist
-	result.Skipped += totalSkipped
+	result.SkippedExcluded = skippedExcluded
 	return result
 }
 
@@ -343,7 +343,6 @@ func (s *Syncer) writeJSONOutput(season string, year int, shows []anilist.Show, 
 		Year:      year,
 		ListTitle: title,
 		ShowCount: len(shows),
-		Skipped:   0,
 	}
 }
 
@@ -420,6 +419,13 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 				} else if info.IDs.TVDB != 0 {
 					id["tvdb"] = info.IDs.TVDB
 				}
+				if len(id) == 0 {
+					slog.Debug("show found in MDBList but has no usable provider ID, skipping",
+						"title", displayTitle,
+						"idMal", it.directMAL)
+					notFoundCount++
+					continue
+				}
 				mdbItems = append(mdbItems, mdbItem{id: id, title: displayTitle})
 				items[i].found = true
 				foundDirect++
@@ -441,6 +447,13 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 					id["tmdb"] = info.IDs.TMDB
 				} else if info.IDs.TVDB != 0 {
 					id["tvdb"] = info.IDs.TVDB
+				}
+				if len(id) == 0 {
+					slog.Debug("show found in MDBList but has no usable provider ID, skipping",
+						"title", displayTitle,
+						"idMal", it.directMAL)
+					notFoundCount++
+					continue
 				}
 				mdbItems = append(mdbItems, mdbItem{id: id, title: displayTitle})
 				items[i].found = true
@@ -476,6 +489,9 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 
 		newIDs := providerIDStrings(mdbItems)
 		oldIDs := s.cache.Items[existing.ID]
+
+		newIDs = filterEmptyStrings(newIDs)
+		oldIDs = filterEmptyStrings(oldIDs)
 
 		// Compute diff: remove stale items, then add new ones.
 		var toRemove, toAdd []map[string]any
@@ -528,8 +544,8 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 				ShowCount:        len(shows),
 				TotalInDB:        foundDirect + foundFallback,
 				FoundViaFallback: foundFallback,
-				Skipped:          notFoundCount,
-				Updated:          true,
+				NotFoundInDB:     notFoundCount,
+				Created:          true,
 			}
 		}
 
@@ -546,9 +562,8 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 		}
 		if added > 0 {
 			slog.Debug("adding new items", "count", added, "title", title)
-			const batchSize = 200
-			for i := 0; i < len(toAdd); i += batchSize {
-				end := i + batchSize
+			for i := 0; i < len(toAdd); i += mdbBatchSize {
+				end := i + mdbBatchSize
 				if end > len(toAdd) {
 					end = len(toAdd)
 				}
@@ -581,7 +596,7 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 			ShowCount:        len(shows),
 			TotalInDB:        foundDirect + foundFallback,
 			FoundViaFallback: foundFallback,
-			Skipped:          notFoundCount,
+			NotFoundInDB:     notFoundCount,
 			Updated:          removed > 0 || added > 0,
 		}
 	}
@@ -605,9 +620,8 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 	// Add items in batches
 	ids := providerIDs(mdbItems)
 	if len(ids) > 0 {
-		const batchSize = 200
-		for i := 0; i < len(ids); i += batchSize {
-			end := i + batchSize
+		for i := 0; i < len(ids); i += mdbBatchSize {
+			end := i + mdbBatchSize
 			if end > len(ids) {
 				end = len(ids)
 			}
@@ -629,7 +643,7 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 		ShowCount:        len(shows),
 		TotalInDB:        foundDirect + foundFallback,
 		FoundViaFallback: foundFallback,
-		Skipped:          notFoundCount,
+		NotFoundInDB:     notFoundCount,
 		Created:          true,
 	}
 }
@@ -648,6 +662,9 @@ func providerIDs(items []mdbItem) []map[string]any {
 func providerIDStrings(items []mdbItem) []string {
 	out := make([]string, len(items))
 	for i, it := range items {
+		if len(it.id) == 0 {
+			continue
+		}
 		for k, v := range it.id {
 			switch val := v.(type) {
 			case string:
@@ -683,6 +700,19 @@ func parseProviderID(s string) map[string]any {
 		// fallback: return as string if parse fails
 	}
 	return map[string]any{key: val}
+}
+
+func filterEmptyStrings(s []string) []string {
+	if s == nil {
+		return nil
+	}
+	out := make([]string, 0, len(s))
+	for _, str := range s {
+		if str != "" {
+			out = append(out, str)
+		}
+	}
+	return out
 }
 
 // SyncAll processes all configured seasons.
@@ -726,11 +756,11 @@ func PrintResults(results []Result, dryRun bool) {
 		if r.SkippedDuration > 0 {
 			skippedParts = append(skippedParts, fmt.Sprintf("%d short", r.SkippedDuration))
 		}
-		if r.SkippedBlacklist > 0 {
-			skippedParts = append(skippedParts, fmt.Sprintf("%d blacklisted", r.SkippedBlacklist))
+		if r.SkippedExcluded > 0 {
+			skippedParts = append(skippedParts, fmt.Sprintf("%d blacklisted", r.SkippedExcluded))
 		}
-		if r.Skipped > 0 {
-			skippedParts = append(skippedParts, fmt.Sprintf("%d not in MDB", r.Skipped))
+		if r.NotFoundInDB > 0 {
+			skippedParts = append(skippedParts, fmt.Sprintf("%d not in MDB", r.NotFoundInDB))
 		}
 		if len(skippedParts) > 0 {
 			skippedStr := "skipped: " + strings.Join(skippedParts, ", ")
