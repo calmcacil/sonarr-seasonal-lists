@@ -772,6 +772,10 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 			}
 		}
 
+		if items[i].found {
+			continue
+		}
+
 		// Not found by ID or one-level relation — try recursive chain
 		if id := s.resolveChainFallback(ctx, it.show, malInfoMap); id != nil {
 			mdbItems = append(mdbItems, mdbItem{id: id, title: displayTitle})
