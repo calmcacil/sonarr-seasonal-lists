@@ -19,7 +19,7 @@ import (
 	"github.com/calmcacil/anilistgen/internal/sync"
 )
 
-const version = "0.1.0"
+var version = "dev"      // set via ldflags at build time (e.g. -X main.version=$(svu next))
 
 func main() {
 	if err := run(); err != nil {
