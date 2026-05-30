@@ -786,11 +786,12 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 					continue
 				}
 				// Reject matches where the result year is far older than the
-				// show's start year (e.g. 2026 reboot matching the 1994 original
-				// is technically correct but adds the wrong entry).
+				// show's start year (e.g. 2026 reboot matching the 1994 original).
+				// Use 15-year threshold — wide enough for long-running sequels
+				// (Dr. Stone 2019→2026) but catches reboots (Rayearth 1994→2026).
 				if it.show.StartDate.Year != nil && *it.show.StartDate.Year > 0 &&
 					searchResult.Year > 0 &&
-					searchResult.Year < *it.show.StartDate.Year-5 {
+					searchResult.Year < *it.show.StartDate.Year-15 {
 					slog.Debug("rejected title search result (year mismatch)",
 						"title", displayTitle,
 						"show_year", *it.show.StartDate.Year,
