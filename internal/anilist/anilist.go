@@ -46,6 +46,7 @@ type Show struct {
 	Genres    []string       `json:"genres"`
 	Tags      []Tag          `json:"tags"`
 	Status    string         `json:"status"`
+	StartDate FuzzyDate      `json:"startDate"`
 	Relations *RelationBlock `json:"relations,omitempty"`
 }
 
@@ -105,10 +106,23 @@ func (s Show) HasTag(name string) bool {
 	return false
 }
 
+// FuzzyDate represents a partial date (year, month, day) from AniList.
+type FuzzyDate struct {
+	Year  *int `json:"year"`
+	Month *int `json:"month"`
+	Day   *int `json:"day"`
+}
+
 // Title holds the english and romaji titles.
 type Title struct {
 	English *string `json:"english"`
 	Romaji  *string `json:"romaji"`
+}
+
+// StartedInDecember returns true if the show's start date month is December.
+// Returns false if the month is unknown.
+func (s Show) StartedInDecember() bool {
+	return s.StartDate.Month != nil && *s.StartDate.Month == 12
 }
 
 // DisplayTitle returns the English title if available, falling back to romaji.
@@ -140,6 +154,7 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 			genres
 			tags { name }
 			status
+			startDate { year month day }
 			relations {
 				edges {
 					node {

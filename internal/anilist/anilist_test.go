@@ -342,3 +342,38 @@ func TestTitleStruct(t *testing.T) {
 		t.Errorf("Romaji = %q, want %q", *title.Romaji, "Romaji Title")
 	}
 }
+
+func TestStartedInDecember_December(t *testing.T) {
+	t.Parallel()
+
+	show := Show{
+		StartDate: FuzzyDate{Month: intPtr(12)},
+	}
+	if !show.StartedInDecember() {
+		t.Error("expected StartedInDecember() to be true for month=12")
+	}
+}
+
+func TestStartedInDecember_OtherMonth(t *testing.T) {
+	t.Parallel()
+
+	show := Show{
+		StartDate: FuzzyDate{Month: intPtr(1)},
+	}
+	if show.StartedInDecember() {
+		t.Error("expected StartedInDecember() to be false for month=1")
+	}
+}
+
+func TestStartedInDecember_NilMonth(t *testing.T) {
+	t.Parallel()
+
+	show := Show{
+		StartDate: FuzzyDate{},
+	}
+	if show.StartedInDecember() {
+		t.Error("expected StartedInDecember() to be false for nil month")
+	}
+}
+
+func intPtr(i int) *int { return &i }

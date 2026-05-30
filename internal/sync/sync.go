@@ -202,8 +202,12 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 			for _, sh := range shows {
 				seen[sh.ID] = true
 			}
-			added := 0
+			var added, skippedNonDec int
 			for _, sh := range overflow {
+				if !sh.StartedInDecember() {
+					skippedNonDec++
+					continue
+				}
 				if !seen[sh.ID] {
 					shows = append(shows, sh)
 					seen[sh.ID] = true
@@ -215,6 +219,7 @@ func (s *Syncer) SyncSeason(ctx context.Context, season string, year int) Result
 				"overflow_year", overflowYear,
 				"primary", primary,
 				"added_from_overflow", added,
+				"skipped_non_december", skippedNonDec,
 				"total", len(shows))
 		}
 	}
