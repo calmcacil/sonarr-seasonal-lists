@@ -13,7 +13,6 @@ cmd/anilistgen/main.go    — entry point, subcommand dispatch
 internal/config/             — YAML config loading, validation, init-config gen
 internal/anilist/            — AniList GraphQL client (retry/backoff)
 internal/mdblist/            — MDBList API client (list CRUD, batch lookup)
-internal/season/             — season constants and calendar detection
 internal/logging/            — slog setup
 internal/sync/               — orchestration: fetch → filter → lookup → publish
 deploy/                      — systemd unit/timer, Dockerfile, docker-compose
@@ -69,10 +68,15 @@ obtained via batch lookup by MAL ID:
 For each season/year:
 
 1. **Fetch** — Query AniList for TV/ONA anime
-2. **Filter** — Remove shows with duration ≤10 min and blacklisted shows
-3. **Lookup** — Batch-resolve MAL IDs (+ relation MAL IDs) against MDBList
-4. **Match** — Try direct MAL ID first, then fallback to relation chain
-5. **Publish** — Find existing list by title → delete + recreate with new items
+2. **Winter overflow** — For WINTER season, also fetches prior year's WINTER
+   and merges only shows with `startDate.month == 12` (December premieres
+   that AniList tagged under the prior calendar year but belong in the
+   current winter viewing list). Filtered by `StartedInDecember()`.
+3. **Filter** — Remove shows with duration ≤10 min, blacklisted shows, and
+   tag-excluded shows
+4. **Lookup** — Batch-resolve MAL IDs (+ relation MAL IDs) against MDBList
+5. **Match** — Try direct MAL ID first, then fallback to relation chain
+6. **Publish** — Find existing list by title → diff-update or delete+recreate
    (or create new if doesn't exist)
 
 ## Key Design Decisions
