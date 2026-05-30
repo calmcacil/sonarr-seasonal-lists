@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -155,6 +156,45 @@ func (c *Client) FindListByTitle(ctx context.Context, title string) (*List, erro
 		}
 	}
 	return nil, nil
+}
+
+// DeduplicateLists removes duplicate-named lists, keeping only the one
+// with the most items. Prevents stale lists from accumulating across runs.
+func (c *Client) DeduplicateLists(ctx context.Context) {
+	lists, err := c.ListLists(ctx)
+	if err != nil {
+		slog.Warn("failed to list lists for dedup", "error", err)
+		return
+	}
+	byName := map[string][]List{}
+	for _, l := range lists {
+		byName[l.Name] = append(byName[l.Name], l)
+	}
+	for name, dupes := range byName {
+		if len(dupes) <= 1 {
+			continue
+		}
+		// Keep the one with the most items, delete the rest
+		best := dupes[0]
+		for _, d := range dupes[1:] {
+			if d.Items > best.Items {
+				best = d
+			}
+		}
+		for _, d := range dupes {
+			if d.ID == best.ID {
+				continue
+			}
+			c.throttle()
+			u := fmt.Sprintf("%s/lists/%d?apikey=%s", apiBase, d.ID, url.QueryEscape(c.apiKey))
+			req, _ := http.NewRequestWithContext(ctx, http.MethodDelete, u, nil)
+			resp, err := c.http.Do(req)
+			if err == nil {
+				resp.Body.Close()
+				slog.Debug("deleted duplicate list", "name", name, "id", d.ID, "items", d.Items)
+			}
+		}
+	}
 }
 
 // CreateList creates a new static list and returns it.

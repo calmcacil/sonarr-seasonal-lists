@@ -628,6 +628,11 @@ func (s *Syncer) writeJSONOutput(season string, year int, shows []anilist.Show, 
 
 // syncMDBList does the actual MDBList list creation/update with items.
 func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title, desc string, shows []anilist.Show) Result {
+	// Deduplicate any stale lists from interrupted runs
+	if s.mdblist != nil {
+		s.mdblist.DeduplicateLists(ctx)
+	}
+
 	slog.Debug("looking up existing list", "title", title)
 
 	existing, err := s.mdblist.FindListByTitle(ctx, title)
