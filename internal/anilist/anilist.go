@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	apiBase  = "https://graphql.anilist.co"
-	maxRetry = 3
+	apiBase         = "https://graphql.anilist.co"
+	maxRetry        = 3
+	rateLimitDelay  = 500 * time.Millisecond
 )
 
 // RelationEdge represents a related media entry.
@@ -153,6 +154,10 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 	}
 }`
 
+type graphqlError struct {
+	Message string `json:"message"`
+}
+
 // graphqlResponse is the top-level response from AniList.
 type graphqlResponse struct {
 	Data struct {
@@ -160,11 +165,13 @@ type graphqlResponse struct {
 			Media []Show `json:"media"`
 		} `json:"Page"`
 	} `json:"data"`
+	Errors []graphqlError `json:"errors,omitempty"`
 }
 
 // Client fetches data from the AniList GraphQL API.
 type Client struct {
-	http *http.Client
+	http     *http.Client
+	lastCall time.Time
 }
 
 // New creates a new AniList client.
@@ -174,10 +181,21 @@ func New() *Client {
 	}
 }
 
+// throttle ensures we don't exceed AniList rate limits.
+func (c *Client) throttle() {
+	elapsed := time.Since(c.lastCall)
+	if elapsed < rateLimitDelay {
+		time.Sleep(rateLimitDelay - elapsed)
+	}
+	c.lastCall = time.Now()
+}
+
 // FetchSeason returns all TV/ONA anime for the given season and year.
 // If includeONA is true, both TV and ONA formats are fetched; otherwise only TV.
 // Results are capped at maxResults.
 func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxResults int, includeONA bool) ([]Show, error) {
+	c.throttle()
+
 	formats := []string{"TV"}
 	if includeONA {
 		formats = append(formats, "ONA")
@@ -204,6 +222,14 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 		return nil, fmt.Errorf("fetch %s %d: %w", season, year, err)
 	}
 
+	if len(resp.Errors) > 0 {
+		msgs := make([]string, len(resp.Errors))
+		for i, e := range resp.Errors {
+			msgs[i] = e.Message
+		}
+		return nil, fmt.Errorf("AniList GraphQL errors: %s", strings.Join(msgs, "; "))
+	}
+
 	shows := resp.Data.Page.Media
 	if shows == nil {
 		shows = []Show{}
@@ -214,6 +240,8 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 
 // Ping checks connectivity to the AniList API by fetching a single result.
 func (c *Client) Ping(ctx context.Context) error {
+	c.throttle()
+
 	query := `{ Page(perPage: 1) { media(type: ANIME) { id } } }`
 	payload := map[string]any{
 		"query":     query,
@@ -264,7 +292,6 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 			lastErr = fmt.Errorf("http request: %w", err)
 			continue
 		}
-
 		if resp.StatusCode == http.StatusTooManyRequests {
 			resp.Body.Close()
 			lastErr = fmt.Errorf("rate limited (attempt %d)", attempt+1)
