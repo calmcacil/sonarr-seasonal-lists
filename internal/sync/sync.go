@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/calmcacil/anilistgen/internal/anilist"
 	"github.com/calmcacil/anilistgen/internal/mdblist"
 )
@@ -71,10 +73,12 @@ type SeasonResult struct {
 
 // Syncer orchestrates fetching from AniList and publishing to MDBList.
 type Syncer struct {
-	anilist *anilist.Client
-	mdblist *mdblist.Client
-	cfg     SyncConfig
-	cache   *itemCache
+	anilist       *anilist.Client
+	mdblist       *mdblist.Client
+	cfg           SyncConfig
+	cache         *itemCache
+	manualMatches map[int]string // MAL ID → user-provided match string
+	pendingManual []ManualEntry  // newly unmatched shows for this sync run
 }
 
 // itemCache tracks the provider IDs we last synced for each list,
@@ -107,6 +111,80 @@ func (c *itemCache) save(path string) error {
 	return os.WriteFile(path, data, 0600)
 }
 
+// ManualEntry holds a single show that couldn't be matched automatically.
+type ManualEntry struct {
+	MAL         int    `yaml:"mal"`
+	AniListID   int    `yaml:"anilist_id"`
+	Title       string `yaml:"title"`
+	AniListLink string `yaml:"anilist_link"`
+	// ManualMatch is filled by the user with the MDBList URL or MAL ID
+	// they found on mdblist.com, e.g. "50695" or "https://mdblist.com/show/2xotz-mf-ghost"
+	ManualMatch string `yaml:"manual_match"`
+}
+
+// manualMatchFile wraps the list of unmatched entries.
+type manualMatchFile struct {
+	Unmatched []ManualEntry `yaml:"unmatched"`
+}
+
+// loadManualMatches reads existing manual matches from disk.
+func loadManualMatches(path string) map[int]string {
+	result := map[int]string{}
+	if path == "" {
+		return result
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return result
+	}
+	var mf manualMatchFile
+	if err := yaml.Unmarshal(data, &mf); err != nil {
+		return result
+	}
+	for _, e := range mf.Unmatched {
+		if e.ManualMatch != "" && e.MAL > 0 {
+			result[e.MAL] = e.ManualMatch
+		}
+	}
+	return result
+}
+
+// appendManualMatches appends new unmatched entries to the manual match file.
+func appendManualMatches(path string, entries []ManualEntry) {
+	if path == "" || len(entries) == 0 {
+		return
+	}
+
+	// Load existing
+	var mf manualMatchFile
+	data, err := os.ReadFile(path)
+	if err == nil {
+		yaml.Unmarshal(data, &mf)
+	}
+
+	// Build a set of existing MAL IDs to avoid duplicates
+	existing := map[int]bool{}
+	for _, e := range mf.Unmatched {
+		existing[e.MAL] = true
+	}
+
+	// Append new entries that aren't already in the file
+	for _, e := range entries {
+		if !existing[e.MAL] {
+			mf.Unmatched = append(mf.Unmatched, e)
+		}
+	}
+
+	out, err := yaml.Marshal(&mf)
+	if err != nil {
+		slog.Warn("failed to marshal manual matches", "error", err)
+		return
+	}
+	if err := os.WriteFile(path, out, 0600); err != nil {
+		slog.Warn("failed to write manual matches", "path", path, "error", err)
+	}
+}
+
 // SyncConfig holds the parameters for a sync operation.
 type SyncConfig struct {
 	MaxPerSeason            int
@@ -121,6 +199,7 @@ type SyncConfig struct {
 	FallbackRelationTypes   []string
 	ExcludeTags             []string
 	ListCachePath           string // path to item cache JSON file
+	ManualMatchFile         string // path to manual_match.yml
 }
 
 // isBlacklisted checks if a show should be skipped.
@@ -160,18 +239,41 @@ func (s *Syncer) hasExcludedTag(show anilist.Show) bool {
 
 const maxChainDepth = 3
 
-// titleVariations generates alternative search titles by stripping
-// season markers and common suffixes, to improve MDBList search matches.
-func titleVariations(title string) []string {
-	seen := map[string]bool{}
-	var add func(string)
-	add = func(t string) {
-		if t != "" && !seen[t] {
-			seen[t] = true
-		}
+// resolveManualMatch resolves a user-provided MAL ID from the manual
+// match file. The match string should be a MAL ID the user determined
+// maps to the show on mdblist.com (e.g. "50695" for MF GHOST base).
+func (s *Syncer) resolveManualMatch(ctx context.Context, matchStr string) map[string]any {
+	var malID int
+	if _, err := fmt.Sscanf(matchStr, "%d", &malID); err != nil || malID <= 0 {
+		return nil
 	}
+	if s.mdblist == nil {
+		return nil
+	}
+	info, err := s.mdblist.LookupByMAL(ctx, malID)
+	if err != nil || info == nil {
+		return nil
+	}
+	id := map[string]any{}
+	if info.IDs.IMDB != "" {
+		id["imdb"] = info.IDs.IMDB
+	} else if info.IDs.TMDB != 0 {
+		id["tmdb"] = info.IDs.TMDB
+	} else if info.IDs.TVDB != 0 {
+		id["tvdb"] = info.IDs.TVDB
+	}
+	if len(id) > 0 {
+		return id
+	}
+	return nil
+}
 
-	add(title)
+// titleVariations generates alternative search titles by stripping
+// generic season/part markers only. No aggressive franchise shortening —
+// if the stripped title doesn't match, the show is written to the
+// manual_match file instead of risking a false positive.
+func titleVariations(title string) []string {
+	seen := map[string]bool{title: true}
 
 	// Strip trailing patterns like "Season N", "Part N", "Nst/nd/rd/th STAGE"
 	repl := []struct {
@@ -182,20 +284,15 @@ func titleVariations(title string) []string {
 		{`\s+Season\s+\d+.*$`, ""},
 		{`\s+Part\s+\d+.*$`, ""},
 		{`\s+Cour\s+\d+.*$`, ""},
-		{`\s+[IVX]+$`, ""},
 		{`\s*\(202\d\)`, ""},
 		{`\s*~[^~]*~$`, ""},
 		{`^【[^】]+】`, ""},
 	}
 	for _, r := range repl {
 		re := regexp.MustCompile(r.re)
-		add(strings.TrimSpace(re.ReplaceAllString(title, r.repl)))
-	}
-
-	// Also try shorter forms: strip leading subtitle-like segments
-	parts := strings.SplitN(title, ":", 2)
-	if len(parts) == 2 {
-		add(strings.TrimSpace(parts[1]))
+		if t := strings.TrimSpace(re.ReplaceAllString(title, r.repl)); t != "" && !seen[t] {
+			seen[t] = true
+		}
 	}
 
 	results := make([]string, 0, len(seen))
@@ -271,11 +368,13 @@ func (s *Syncer) resolveChainFallback(ctx context.Context, show anilist.Show, ma
 // New creates a new Syncer.
 func New(ani *anilist.Client, mdb *mdblist.Client, cfg SyncConfig) *Syncer {
 	cache := loadItemCache(cfg.ListCachePath)
+	manualMatches := loadManualMatches(cfg.ManualMatchFile)
 	return &Syncer{
-		anilist: ani,
-		mdblist: mdb,
-		cfg:     cfg,
-		cache:   cache,
+		anilist:       ani,
+		mdblist:       mdb,
+		cfg:           cfg,
+		cache:         cache,
+		manualMatches: manualMatches,
 	}
 }
 
@@ -623,11 +722,46 @@ func (s *Syncer) syncMDBList(ctx context.Context, season string, year int, title
 			}
 		}
 
-		// Show not found in MDBList at all
+		// Show not found by any automated method — check manual matches
+		malID := 0
+		if it.directMAL > 0 {
+			malID = it.directMAL
+		}
+		if matchStr, ok := s.manualMatches[malID]; ok && matchStr != "" {
+			// User provided a manual match — try to use it
+			if id := s.resolveManualMatch(ctx, matchStr); id != nil {
+				mdbItems = append(mdbItems, mdbItem{id: id, title: displayTitle})
+				items[i].found = true
+				foundSearch++
+				slog.Debug("matched via manual match file",
+					"title", displayTitle,
+					"mal", malID,
+					"match", matchStr)
+				continue
+			}
+		}
+
+		// Truly unmatched — record for manual_match.yml
+		if malID > 0 {
+			link := fmt.Sprintf("https://anilist.co/anime/%d", it.show.ID)
+			s.pendingManual = append(s.pendingManual, ManualEntry{
+				MAL:         malID,
+				AniListID:   it.show.ID,
+				Title:       displayTitle,
+				AniListLink: link,
+			})
+		}
+
 		notFoundCount++
 		slog.Debug("show not in MDBList, skipping",
 			"title", displayTitle,
 			"idMal", it.directMAL)
+	}
+
+	// Save pending manual entries
+	if len(s.pendingManual) > 0 {
+		appendManualMatches(s.cfg.ManualMatchFile, s.pendingManual)
+		s.pendingManual = nil
 	}
 
 	if notFoundCount > 0 {
