@@ -17,6 +17,7 @@ type Config struct {
 	OutputDir string        `yaml:"output_dir"`
 	CommunityMappingPath string `yaml:"community_mapping_path"`
 	AnimeListsPath       string `yaml:"anime_lists_path"`
+	TMDBAPIKey string        `yaml:"tmdb_api_key"`
 	Logging  LoggingConfig `yaml:"logging"`
 	Sonarr   SonarrConfig  `yaml:"sonarr"`
 }
@@ -232,6 +233,10 @@ func (c *Config) applyEnvOverrides() {
 		c.AnimeListsPath = v
 	}
 
+	if v := os.Getenv(envPrefix + "TMDB_API_KEY"); v != "" {
+		c.TMDBAPIKey = v
+	}
+
 	if v := os.Getenv(envPrefix + "LOG_LEVEL"); v != "" {
 		c.Logging.Level = v
 	}
@@ -297,6 +302,7 @@ func loadFile(path string) (*Config, error) {
 		"output_dir":             true,
 		"community_mapping_path": true,
 		"anime_lists_path":       true,
+		"tmdb_api_key":           true,
 		"logging":                true,
 		"sonarr":                 true,
 	}

@@ -19,14 +19,17 @@ type animeListXML struct {
 }
 
 type animeEntry struct {
-	AnidbID    string `xml:"anidbid,attr"`
-	TVDBID     string `xml:"tvdbid,attr"`
+	AnidbID       string `xml:"anidbid,attr"`
+	TVDBID        string `xml:"tvdbid,attr"`
 	DefaultSeason string `xml:"defaulttvdbseason,attr"`
-	IMDBID     string `xml:"imdbid,attr"`
+	IMDBID        string `xml:"imdbid,attr"`
+	TMDBID        string `xml:"tmdbid,attr"`
+	TMDbTV        string `xml:"tmdbtv,attr"`
 }
 
 type AnimeListsMapping struct {
-	data map[int]int
+	data    map[int]int
+	tmdbMap map[int]int
 }
 
 func LoadAnimeListsMapping(path string) (*AnimeListsMapping, error) {
@@ -53,23 +56,35 @@ func LoadAnimeListsMapping(path string) (*AnimeListsMapping, error) {
 		return nil, fmt.Errorf("parse anime-lists XML: %w", err)
 	}
 
-	alm := &AnimeListsMapping{data: make(map[int]int, len(xmlData.Anime))}
+	alm := &AnimeListsMapping{
+		data:    make(map[int]int, len(xmlData.Anime)),
+		tmdbMap: make(map[int]int),
+	}
 	for _, e := range xmlData.Anime {
 		anidbID, err := strconv.Atoi(e.AnidbID)
 		if err != nil || anidbID <= 0 {
 			continue
 		}
-		tvdbID, err := strconv.Atoi(e.TVDBID)
-		if err != nil || tvdbID <= 0 {
-			continue
+		if tvdbID, err := strconv.Atoi(e.TVDBID); err == nil && tvdbID > 0 {
+			alm.data[anidbID] = tvdbID
 		}
-		alm.data[anidbID] = tvdbID
+		if tmdbID, err := strconv.Atoi(e.TMDBID); err == nil && tmdbID > 0 {
+			alm.tmdbMap[anidbID] = tmdbID
+		}
 	}
-	slog.Info("loaded anime-lists mapping", "entries", len(alm.data), "path", path)
+	slog.Info("loaded anime-lists mapping",
+		"tvdb_entries", len(alm.data),
+		"tmdb_entries", len(alm.tmdbMap),
+		"path", path)
 	return alm, nil
 }
 
 func (m *AnimeListsMapping) Lookup(anidbID int) (int, bool) {
 	tvdbID, ok := m.data[anidbID]
 	return tvdbID, ok
+}
+
+func (m *AnimeListsMapping) LookupTMDB(anidbID int) (int, bool) {
+	tmdbID, ok := m.tmdbMap[anidbID]
+	return tmdbID, ok
 }

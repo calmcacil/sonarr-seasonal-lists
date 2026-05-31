@@ -185,7 +185,13 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 	}
 
 	aniClient := anilist.New()
-	resolver := mapping.NewResolver(cm, alm)
+	jikan := mapping.NewJikanClient(cfg.CommunityMappingPath + ".jikan_cache.json")
+	var tmdb *mapping.TMDBClient
+	if cfg.TMDBAPIKey != "" {
+		tmdb = mapping.NewTMDBClient(cfg.TMDBAPIKey)
+		slog.Info("TMDB search enabled for movie fallback")
+	}
+	resolver := mapping.NewResolver(cm, alm, jikan, tmdb)
 
 	formats := []string{"TV", "MOVIE", "OVA", "SPECIAL"}
 	if cfg.AniList.IncludeONA {
@@ -331,9 +337,9 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 		data  map[string][]output.Show
 	}
 	results := []catResult{
-		{label: "series", data: resolveCategory(ctx, resolver, series.shows, dryRun)},
-		{label: "series-new", data: resolveCategory(ctx, resolver, series.new, dryRun)},
-		{label: "movies", data: resolveCategory(ctx, resolver, movies.shows, dryRun)},
+		{label: "series", data: resolveCategory(ctx, resolver, series.shows, dryRun, false)},
+		{label: "series-new", data: resolveCategory(ctx, resolver, series.new, dryRun, false)},
+		{label: "movies", data: resolveCategory(ctx, resolver, movies.shows, dryRun, true)},
 	}
 
 	if dryRun {
@@ -357,7 +363,7 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 	return nil
 }
 
-func resolveCategory(ctx context.Context, resolver *mapping.Resolver, all map[string][]anilist.Show, dryRun bool) map[string][]output.Show {
+func resolveCategory(ctx context.Context, resolver *mapping.Resolver, all map[string][]anilist.Show, dryRun bool, isMovies bool) map[string][]output.Show {
 	out := map[string][]output.Show{}
 	for key, shows := range all {
 		parts := strings.SplitN(key, "-", 2)
@@ -365,29 +371,40 @@ func resolveCategory(ctx context.Context, resolver *mapping.Resolver, all map[st
 		var year int
 		fmt.Sscanf(parts[1], "%d", &year)
 
-		rs := resolver.ResolveBatch(ctx, shows)
+		rs := resolver.ResolveBatch(ctx, shows, isMovies)
 
 		var resolved []output.Show
-		var unmatched int
-		for _, show := range shows {
-			if r, ok := rs[show.ID]; ok && r.Resolved {
-				resolved = append(resolved, output.Show{
-					TVDBID: r.TVDBID,
-					Title:  r.Title,
-				})
-			} else {
-				unmatched++
+			var unmatched int
+			for _, show := range shows {
+				if r, ok := rs[show.ID]; ok && r.Resolved {
+					if isMovies && r.TMDBID <= 0 {
+						unmatched++
+						continue
+					}
+					s := output.Show{Title: r.Title}
+					if isMovies {
+						s.TMDBID = r.TMDBID
+					} else {
+						s.TVDBID = r.TVDBID
+					}
+					resolved = append(resolved, s)
+				} else {
+					unmatched++
+				}
 			}
-		}
 
-		if dryRun {
-			fmt.Printf("\n[%s %d] %d shows (%d resolved, %d unmatched)\n",
-				season, year, len(shows), len(resolved), unmatched)
-			for _, s := range resolved {
-				fmt.Printf("  TVDB %d — %s\n", s.TVDBID, s.Title)
+			if dryRun {
+				fmt.Printf("\n[%s %d] %d shows (%d resolved, %d unmatched)\n",
+					season, year, len(shows), len(resolved), unmatched)
+				for _, s := range resolved {
+					if s.TMDBID > 0 {
+						fmt.Printf("  TMDB %d — %s\n", s.TMDBID, s.Title)
+					} else {
+						fmt.Printf("  TVDB %d — %s\n", s.TVDBID, s.Title)
+					}
+				}
+				continue
 			}
-			continue
-		}
 
 		out[key] = resolved
 	}

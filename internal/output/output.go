@@ -9,7 +9,8 @@ import (
 )
 
 type Show struct {
-	TVDBID int    `json:"tvdbId"`
+	TVDBID int    `json:"tvdbId,omitempty"`
+	TMDBID int    `json:"tmdbId,omitempty"`
 	Title  string `json:"title,omitempty"`
 }
 
