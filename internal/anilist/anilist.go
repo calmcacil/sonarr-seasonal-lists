@@ -23,23 +23,56 @@ type Tag struct {
 	Name string `json:"name"`
 }
 
+// RelationEdge represents a related media entry.
+type RelationEdge struct {
+	Node         RelationNode `json:"node"`
+	RelationType string       `json:"relationType"`
+}
+
+// RelationNode holds minimal data for a related media entry.
+type RelationNode struct {
+	ID    int   `json:"id"`
+	IDMal *int  `json:"idMal"`
+	Title Title `json:"title"`
+}
+
+// RelationBlock holds the edges wrapper.
+type RelationBlock struct {
+	Edges []RelationEdge `json:"edges"`
+}
+
 // Show represents an anime show from the AniList API.
 type Show struct {
-	ID        int       `json:"id"`
-	IDMal     *int      `json:"idMal"`
-	Title     Title     `json:"title"`
-	Format    string    `json:"format"`
-	Episodes  *int      `json:"episodes"`
-	Duration  *int      `json:"duration"`
-	Genres    []string  `json:"genres"`
-	Tags      []Tag     `json:"tags"`
-	Status    string    `json:"status"`
-	StartDate FuzzyDate `json:"startDate"`
+	ID        int            `json:"id"`
+	IDMal     *int           `json:"idMal"`
+	Title     Title          `json:"title"`
+	Format    string         `json:"format"`
+	Episodes  *int           `json:"episodes"`
+	Duration  *int           `json:"duration"`
+	Genres    []string       `json:"genres"`
+	Tags      []Tag          `json:"tags"`
+	Status    string         `json:"status"`
+	StartDate FuzzyDate      `json:"startDate"`
+	Relations *RelationBlock `json:"relations,omitempty"`
 }
 
 // IsSeries returns true if the show is a series (TV, ONA) rather than a movie (MOVIE, OVA, SPECIAL).
 func (s Show) IsSeries() bool {
 	return s.Format == "TV" || s.Format == "ONA"
+}
+
+// IsNew returns true if the show is not a sequel or spin-off of an existing franchise.
+// A show is considered "new" if it has no PREQUEL or PARENT relations.
+func (s Show) IsNew() bool {
+	if s.Relations == nil {
+		return true
+	}
+	for _, e := range s.Relations.Edges {
+		if e.RelationType == "PREQUEL" || e.RelationType == "PARENT" {
+			return false
+		}
+	}
+	return true
 }
 
 // SkipByDuration returns true if the show should be skipped because its
@@ -131,6 +164,12 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 			tags { name }
 			status
 			startDate { year month day }
+			relations {
+				edges {
+					node { id idMal title { romaji english } }
+					relationType
+				}
+			}
 		}
 	}
 }`

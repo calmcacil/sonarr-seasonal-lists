@@ -110,9 +110,11 @@ Output is split by category:
 | Prefix | Contents |
 |---|---|
 | `series-` | TV and ONA shows |
+| `series-new-` | New IPs only (no sequels or spin-offs) |
 | `movies-` | Movies, OVAs, and specials |
+| `movies-new-` | New movies/OVAs/specials only |
 
-**`series-winter-2026.json`** (and `series-2026.json`):
+**`series-winter-2026.json`** (and `series-new-winter-2026.json`):
 
 ```json
 [{"tvdbId":377543,"title":"..."},{"tvdbId":424536,"title":"..."}]
