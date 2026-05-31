@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -13,8 +14,9 @@ import (
 
 const (
 	apiBase           = "https://graphql.anilist.co"
-	maxRetry          = 3
+	maxRetry          = 5
 	rateLimitDelay    = 500 * time.Millisecond
+	rateLimitBackoff  = 5 * time.Second
 	maxPerPage        = 50
 )
 
@@ -208,11 +210,18 @@ func New() *Client {
 	}
 }
 
+var lastRateLimit time.Time
+
 // throttle ensures we don't exceed AniList rate limits.
+// After a 429 response, backs off to 5s for 30 seconds.
 func (c *Client) throttle() {
+	minDelay := rateLimitDelay
+	if time.Since(lastRateLimit) < 30*time.Second {
+		minDelay = rateLimitBackoff
+	}
 	elapsed := time.Since(c.lastCall)
-	if elapsed < rateLimitDelay {
-		time.Sleep(rateLimitDelay - elapsed)
+	if elapsed < minDelay {
+		time.Sleep(minDelay - elapsed)
 	}
 	c.lastCall = time.Now()
 }
@@ -337,7 +346,15 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 			continue
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
+			lastRateLimit = time.Now()
+			retryAfter := resp.Header.Get("Retry-After")
 			resp.Body.Close()
+			if retryAfter != "" {
+				if d, err := time.ParseDuration(retryAfter + "s"); err == nil {
+					slog.Warn("rate limited, waiting retry-after", "seconds", retryAfter)
+					time.Sleep(d)
+				}
+			}
 			lastErr = fmt.Errorf("rate limited (attempt %d)", attempt+1)
 			continue
 		}
