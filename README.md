@@ -1,4 +1,4 @@
-# anilistgen
+# Seasonal Anime Lists for Sonarr
 
 ![Last updated](https://img.shields.io/github/last-commit/calmcacil/sonarr-seasonal-lists/gh-pages?label=last%20updated&color=blue)
 
