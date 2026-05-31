@@ -27,9 +27,18 @@ jobs:
             echo "ALG_ANILIST_YEARS=${{ github.event.inputs.years }}" >> $GITHUB_ENV
           fi
 
+      - name: Collect existing years from gh-pages
+        run: |
+          git fetch origin gh-pages --depth=1
+          years=$(git ls-tree -d --name-only origin/gh-pages | grep '^[0-9]\{4\}$' | paste -sd,)
+          if [ -n "$years" ]; then
+            echo "ALG_INDEX_YEARS=$years" >> $GITHUB_ENV
+          fi
+
       - run: ./anilistgen -output ./out
         env:
           ALG_ANILIST_YEARS: ${{ env.ALG_ANILIST_YEARS }}
+          ALG_INDEX_YEARS: ${{ env.ALG_INDEX_YEARS }}
 
       - uses: peaceiris/actions-gh-pages@v3
         with:

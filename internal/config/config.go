@@ -18,6 +18,7 @@ type Config struct {
 	BaseURL              string         `yaml:"base_url"`
 	CommunityMappingPath string         `yaml:"community_mapping_path"`
 	Logging              LoggingConfig  `yaml:"logging"`
+	IndexYears           []int          `yaml:"index_years"`
 }
 
 type AniListConfig struct {
@@ -228,6 +229,23 @@ func (c *Config) applyEnvOverrides() {
 		c.BaseURL = v
 	}
 
+	if v := os.Getenv(envPrefix + "INDEX_YEARS"); v != "" {
+		parts := strings.Split(v, ",")
+		var years []int
+		for _, p := range parts {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if y, err := strconv.Atoi(p); err == nil && y >= 2010 {
+				years = append(years, y)
+			}
+		}
+		if len(years) > 0 {
+			c.IndexYears = years
+		}
+	}
+
 	if v := os.Getenv(envPrefix + "COMMUNITY_MAPPING_PATH"); v != "" {
 		c.CommunityMappingPath = v
 	}
@@ -273,6 +291,7 @@ func loadFile(path string) (*Config, error) {
 		"blacklist":              true,
 		"output_dir":             true,
 		"base_url":               true,
+		"index_years":            true,
 		"community_mapping_path": true,
 		"logging":                true,
 	}
