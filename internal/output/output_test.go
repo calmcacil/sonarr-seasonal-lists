@@ -126,7 +126,7 @@ func TestWriteAllJSON(t *testing.T) {
 		"WINTER-2025": {{TVDBID: 3, Title: "Old Show"}},
 	}
 
-	err := WriteAllJSON(dir, "https://example.com", "series", seasonal)
+	err := WriteAllJSON(dir, "https://example.com", "series", seasonal, nil)
 	if err != nil {
 		t.Fatalf("WriteAllJSON: %v", err)
 	}
@@ -188,10 +188,10 @@ func TestWriteAllJSON_MultipleCategories(t *testing.T) {
 		"WINTER-2026": {{TVDBID: 2, Title: "Movie A"}},
 	}
 
-	if err := WriteAllJSON(dir, "https://example.com", "series", series); err != nil {
+	if err := WriteAllJSON(dir, "https://example.com", "series", series, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := WriteAllJSON(dir, "https://example.com", "movies", movies); err != nil {
+	if err := WriteAllJSON(dir, "https://example.com", "movies", movies, nil); err != nil {
 		t.Fatal(err)
 	}
 

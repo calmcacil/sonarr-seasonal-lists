@@ -332,7 +332,7 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 	}
 
 	for _, r := range results {
-		if err := output.WriteAllJSON(outputDir, cfg.BaseURL, r.label, r.data); err != nil {
+		if err := output.WriteAllJSON(outputDir, cfg.BaseURL, r.label, r.data, cfg.IndexYears); err != nil {
 			return fmt.Errorf("write %s JSON: %w", r.label, err)
 		}
 	}

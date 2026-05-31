@@ -45,7 +45,7 @@ func writeJSON(dir, filename string, shows []Show) error {
 	return nil
 }
 
-func WriteAllJSON(outputDir, baseURL, category string, seasonal map[string][]Show) error {
+func WriteAllJSON(outputDir, baseURL, category string, seasonal map[string][]Show, indexYears []int) error {
 	byYear := map[int][]Show{}
 
 	for key, shows := range seasonal {
@@ -71,8 +71,15 @@ func WriteAllJSON(outputDir, baseURL, category string, seasonal map[string][]Sho
 	}
 
 	if category == "series" {
-		years := make([]int, 0, len(byYear))
+		yearSet := make(map[int]struct{}, len(byYear)+len(indexYears))
 		for y := range byYear {
+			yearSet[y] = struct{}{}
+		}
+		for _, y := range indexYears {
+			yearSet[y] = struct{}{}
+		}
+		years := make([]int, 0, len(yearSet))
+		for y := range yearSet {
 			years = append(years, y)
 		}
 		if err := WriteIndex(outputDir, baseURL, years); err != nil {
