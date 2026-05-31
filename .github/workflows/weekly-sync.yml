@@ -6,16 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       years:
-        description: 'Years to process (comma-separated, e.g. 2010,2011,...,2026)'
+        description: 'Years to process (comma-separated, e.g. 2010,2011,...,2026). Leave empty for current year only.'
         required: false
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/weekly-sync.yml'
-      - 'cmd/**'
-      - 'internal/**'
-      - 'go.mod'
-      - 'go.sum'
 
 jobs:
   generate:
