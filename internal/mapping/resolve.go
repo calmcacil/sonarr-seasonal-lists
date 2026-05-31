@@ -33,8 +33,8 @@ func NewResolver(cm *CommunityMapping, alm *AnimeListsMapping, jc *JikanClient, 
 
 // Resolve tries each mapping source in order:
 // 1. Community mapping (MAL → TVDB, instant)
-// 2. Jikan + anime-lists (MAL → AniDB → TVDB/TMDB, requires API call)
-// 3. TMDB search (by title, for movies only, requires API key)
+// 2. TMDB search (by title, movies only, 0.3s per miss — fast)
+// 3. Jikan + anime-lists (MAL → AniDB → TVDB/TMDB, 1.2s per miss — slow, last resort)
 // Returns tvdbID, tmdbID, resolved.
 func (r *Resolver) Resolve(ctx context.Context, malID int, anilistID int, title string, isMovie bool) (tvdbID int, tmdbID int, resolved bool) {
 	if malID <= 0 && !isMovie {
@@ -50,7 +50,19 @@ func (r *Resolver) Resolve(ctx context.Context, malID int, anilistID int, title 
 		}
 	}
 
-	// Step 2: Jikan → AniDB → anime-lists lookup
+	// Step 2: TMDB search (movies only, fast — catches ~73% of movies)
+	if isMovie && r.tmdb != nil && title != "" {
+		tmdbID, err := r.tmdb.SearchMovie(ctx, title, 0)
+		if err != nil {
+			slog.Debug("tmdb search failed", "title", title, "error", err)
+		} else if tmdbID > 0 {
+			slog.Debug("resolved via tmdb search",
+				"title", title, "tmdb", tmdbID)
+			return 0, tmdbID, true
+		}
+	}
+
+	// Step 3: Jikan + anime-lists (slow, last resort — only for remaining unmatched)
 	if malID > 0 && r.jikan != nil && r.animelists != nil {
 		anidbID, err := r.jikan.MALToAniDB(ctx, malID)
 		if err == nil {
@@ -64,18 +76,6 @@ func (r *Resolver) Resolve(ctx context.Context, malID int, anilistID int, title 
 			}
 		} else {
 			slog.Debug("jikan lookup failed", "title", title, "mal", malID, "error", err)
-		}
-	}
-
-	// Step 3: TMDB search (movies only, final fallback)
-	if isMovie && r.tmdb != nil && title != "" {
-		tmdbID, err := r.tmdb.SearchMovie(ctx, title, 0)
-		if err != nil {
-			slog.Debug("tmdb search failed", "title", title, "error", err)
-		} else if tmdbID > 0 {
-			slog.Debug("resolved via tmdb search",
-				"title", title, "tmdb", tmdbID)
-			return 0, tmdbID, true
 		}
 	}
 
