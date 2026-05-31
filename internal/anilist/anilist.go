@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -186,8 +187,9 @@ type graphqlResponse struct {
 
 // Client fetches data from the AniList GraphQL API.
 type Client struct {
-	http     *http.Client
-	lastCall time.Time
+	http           *http.Client
+	lastCall       time.Time
+	lastRateLimit  time.Time
 }
 
 // New creates a new AniList client.
@@ -197,13 +199,11 @@ func New() *Client {
 	}
 }
 
-var lastRateLimit time.Time
-
 // throttle ensures we don't exceed AniList rate limits.
 // After a 429 response, backs off to 5s for 30 seconds.
 func (c *Client) throttle() {
 	minDelay := rateLimitDelay
-	if time.Since(lastRateLimit) < 30*time.Second {
+	if time.Since(c.lastRateLimit) < 30*time.Second {
 		minDelay = rateLimitBackoff
 	}
 	elapsed := time.Since(c.lastCall)
@@ -226,6 +226,12 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 	page := 1
 
 	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
 		c.throttle()
 
 		payload := map[string]any{
@@ -315,7 +321,7 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 	var lastErr error
 	for attempt := range maxRetry {
 		if attempt > 0 {
-			// Exponential backoff: 1s, 2s, 4s
+			// Exponential backoff: 2s, 4s, 8s, 16s
 			time.Sleep(time.Duration(1<<attempt) * time.Second)
 		}
 
@@ -333,13 +339,13 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 			continue
 		}
 		if resp.StatusCode == http.StatusTooManyRequests {
-			lastRateLimit = time.Now()
+			c.lastRateLimit = time.Now()
 			retryAfter := resp.Header.Get("Retry-After")
 			resp.Body.Close()
 			if retryAfter != "" {
-				if d, err := time.ParseDuration(retryAfter + "s"); err == nil {
-					slog.Warn("rate limited, waiting retry-after", "seconds", retryAfter)
-					time.Sleep(d)
+				if sec, err := strconv.Atoi(retryAfter); err == nil && sec > 0 {
+					slog.Warn("rate limited, waiting retry-after", "seconds", sec)
+					time.Sleep(time.Duration(sec) * time.Second)
 				}
 			}
 			lastErr = fmt.Errorf("rate limited (attempt %d)", attempt+1)

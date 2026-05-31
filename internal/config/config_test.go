@@ -283,14 +283,24 @@ func TestApplyEnvOverrides_MaxPerSeason(t *testing.T) {
 }
 
 func TestApplyEnvOverrides_IncludeONA(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_ANILIST_INCLUDE_ONA", "false")
-	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_INCLUDE_ONA") })
-
-	cfg.applyEnvOverrides()
-	if cfg.AniList.IncludeONA {
-		t.Error("expected IncludeONA to be false")
-	}
+	t.Run("overrides to true", func(t *testing.T) {
+		cfg := &Config{AniList: AniListConfig{IncludeONA: false}}
+		os.Setenv("ALG_ANILIST_INCLUDE_ONA", "true")
+		t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_INCLUDE_ONA") })
+		cfg.applyEnvOverrides()
+		if !cfg.AniList.IncludeONA {
+			t.Error("expected IncludeONA to be true")
+		}
+	})
+	t.Run("overrides to false", func(t *testing.T) {
+		cfg := &Config{AniList: AniListConfig{IncludeONA: true}}
+		os.Setenv("ALG_ANILIST_INCLUDE_ONA", "false")
+		t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_INCLUDE_ONA") })
+		cfg.applyEnvOverrides()
+		if cfg.AniList.IncludeONA {
+			t.Error("expected IncludeONA to be false")
+		}
+	})
 }
 
 func TestApplyEnvOverrides_WinterOverflow(t *testing.T) {

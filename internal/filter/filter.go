@@ -1,8 +1,8 @@
 package filter
 
 import (
-	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 
 	"github.com/calmcacil/anilistgen/internal/anilist"
@@ -63,8 +63,7 @@ func isBlacklisted(title string, idMal int, blacklist []string) bool {
 		if entry == "" {
 			continue
 		}
-		var malID int
-		if _, err := fmt.Sscanf(entry, "%d", &malID); err == nil && malID > 0 {
+		if malID, err := strconv.Atoi(entry); err == nil && malID > 0 {
 			if malID == idMal {
 				return true
 			}

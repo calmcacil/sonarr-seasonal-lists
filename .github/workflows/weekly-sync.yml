@@ -19,6 +19,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.24'
+      - run: go vet ./...
+      - run: go test ./...
       - run: go build ./cmd/anilistgen
 
       - name: Set years

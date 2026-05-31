@@ -46,20 +46,26 @@ func (a *AniListConfig) Season() []string {
 	if len(a.Seasons) == 0 {
 		return AllSeasons()
 	}
+	seen := make(map[string]bool, len(a.Seasons))
 	seasons := make([]string, 0, len(a.Seasons))
 	for _, s := range a.Seasons {
 		if strings.EqualFold(s, "all") {
 			return AllSeasons()
 		}
+		var season string
 		switch strings.ToLower(s) {
 		case "winter":
-			seasons = append(seasons, "WINTER")
+			season = "WINTER"
 		case "spring":
-			seasons = append(seasons, "SPRING")
+			season = "SPRING"
 		case "summer":
-			seasons = append(seasons, "SUMMER")
+			season = "SUMMER"
 		case "fall":
-			seasons = append(seasons, "FALL")
+			season = "FALL"
+		}
+		if season != "" && !seen[season] {
+			seen[season] = true
+			seasons = append(seasons, season)
 		}
 	}
 	return seasons
@@ -313,18 +319,20 @@ func loadFile(path string) (*Config, error) {
 	return &cfg, nil
 }
 
+func xdgConfigHome() string {
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return xdg
+	}
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config")
+}
+
 func searchPaths(cliPath string) []string {
 	if cliPath != "" {
 		return []string{cliPath}
 	}
 	paths := []string{filepath.Join(".", "anilistgen.yaml")}
-	xdg := os.Getenv("XDG_CONFIG_HOME")
-	if xdg == "" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			xdg = filepath.Join(home, ".config")
-		}
-	}
+	xdg := xdgConfigHome()
 	if xdg != "" {
 		paths = append(paths, filepath.Join(xdg, "anilistgen", "anilistgen.yaml"))
 	}
@@ -403,10 +411,5 @@ func ResolveConfigPath(cliPath string) string {
 			return p
 		}
 	}
-	xdg := os.Getenv("XDG_CONFIG_HOME")
-	if xdg == "" {
-		home, _ := os.UserHomeDir()
-		xdg = filepath.Join(home, ".config")
-	}
-	return filepath.Join(xdg, "anilistgen", "anilistgen.yaml")
+	return filepath.Join(xdgConfigHome(), "anilistgen", "anilistgen.yaml")
 }

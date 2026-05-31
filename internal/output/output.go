@@ -1,6 +1,7 @@
 package output
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -9,6 +10,9 @@ import (
 	"strings"
 	"time"
 )
+
+//go:embed index.html
+var indexTemplate string
 
 type Show struct {
 	TVDBID int    `json:"tvdbId"`
@@ -96,7 +100,6 @@ func WriteIndex(dir, baseURL string, years []int) error {
 	}
 	sort.Sort(sort.Reverse(sort.IntSlice(years)))
 
-	// Build year options HTML
 	now := time.Now().Year()
 	var yearOpts string
 	for _, y := range years {
@@ -107,193 +110,9 @@ func WriteIndex(dir, baseURL string, years []int) error {
 		yearOpts += fmt.Sprintf("      <option value=\"%d\"%s>%d</option>\n", y, sel, y)
 	}
 
-	html := `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Seasonal Anime Lists</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: #0d1117; color: #c9d1d9;
-    min-height: 100vh; padding: 30px;
-    display: flex; gap: 30px; justify-content: center; align-items: flex-start;
-  }
-  .sidebar {
-    background: #161b22; border: 1px solid #30363d; border-radius: 12px;
-    padding: 28px; width: 320px; flex-shrink: 0;
-    position: sticky; top: 30px;
-  }
-  .sidebar h2 { font-size: 16px; margin-bottom: 16px; }
-  .sidebar ol { padding-left: 20px; font-size: 13px; line-height: 1.8; color: #8b949e; }
-  .sidebar ol li { margin-bottom: 6px; }
-  .sidebar code {
-    background: #0d1117; padding: 2px 6px; border-radius: 4px;
-    font-size: 12px; color: #c9d1d9;
-  }
-  .sidebar .note { margin-top: 16px; font-size: 12px; color: #484f58; }
-  .sidebar .note code { font-size: 11px; }
-  .main { max-width: 820px; width: 100%; }
-  h1 { font-size: 24px; margin-bottom: 4px; }
-  .sub { color: #8b949e; font-size: 14px; margin-bottom: 24px; }
-  .controls { margin-bottom: 24px; }
-  select {
-    padding: 10px 16px; border-radius: 8px;
-    background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
-    font-size: 15px; cursor: pointer; min-width: 160px;
-  }
-  .section-label {
-    font-size: 13px; font-weight: 600; color: #8b949e;
-    text-transform: uppercase; letter-spacing: 0.5px;
-    margin-bottom: 12px; margin-top: 20px;
-  }
-  .grid { display: grid; gap: 12px; }
-  .grid.seasons { grid-template-columns: 1fr 1fr; }
-  .grid.year { grid-template-columns: minmax(230px, 1fr); }
-  .grid.single { max-width: 320px; }
-  .grid:empty { display: none; }
-  @media (max-width: 500px) {
-    .grid.seasons { grid-template-columns: 1fr; }
-  }
-  .box {
-    background: #161b22; border: 1px solid #30363d; border-radius: 10px;
-    padding: 16px; display: flex; flex-direction: column; gap: 10px;
-  }
-  .box .hdr {
-    display: flex; justify-content: space-between; align-items: center;
-  }
-  .box .hdr .lbl { font-size: 14px; font-weight: 600; }
-  .badge {
-    display: inline-block; padding: 2px 8px; border-radius: 4px;
-    font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
-  }
-  .badge-sonarr { background: #1f6feb; color: #fff; }
-  .box .btn-row { display: flex; gap: 6px; }
-  .box .btn-row .btn {
-    flex: 1; padding: 8px 10px; border-radius: 6px; border: none;
-    font-size: 12px; font-weight: 600; cursor: pointer; text-align: center;
-    transition: background 0.15s;
-  }
-  .btn-copy { background: #238636; color: #fff; }
-  .btn-copy:hover { background: #2ea043; }
-  .btn-copy:active { background: #1e7e34; }
-  .btn-new {
-    background: #1f6feb; color: #fff;
-  }
-  .btn-new:hover { background: #388bfd; }
-  .btn-new.active { background: #da3633; }
-  .btn-new.active:hover { background: #f85149; }
-  .toast {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-    background: #30363d; color: #c9d1d9; padding: 10px 24px;
-    border-radius: 8px; font-size: 13px; display: none;
-    border: 1px solid #484f58; z-index: 999;
-  }
-  @media (max-width: 800px) {
-    body { flex-direction: column; padding: 16px; gap: 16px; }
-    .sidebar { width: 100%; position: static; }
-  }
-</style>
-</head>
-<body>
-
-<div class="sidebar">
-  <h2>How to use in Sonarr</h2>
-  <ol>
-    <li>Go to <strong>Settings → Import Lists</strong></li>
-    <li>Click <strong>Add List</strong> → <strong>Custom List</strong></li>
-    <li>Paste one of the URLs from the boxes</li>
-    <li>Set <strong>Monitor</strong> to your preference</li>
-    <li>Click <strong>Save</strong> — Sonarr imports on its next sync</li>
-  </ol>
-  <p class="note">
-    Lists update weekly. Toggle <strong>New only</strong> to exclude sequels and spin-offs.<br>
-    <code style="font-size:11px;">lists.calmcacil.dev</code>
-  </p>
-</div>
-
-<div class="main">
-  <h1>Seasonal Anime Lists</h1>
-  <p class="sub">Sonarr-compatible lists generated from AniList data.</p>
-
-  <div class="controls">
-    <select id="yearSel">` + "\n" + yearOpts + `    </select>
-  </div>
-
-  <div class="section-label">By Season</div>
-  <div class="grid" id="seasonGrid"></div>
-
-  <div class="section-label">Full Year</div>
-  <div class="grid" id="yearGrid"></div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script>
-var base = '` + baseURL + `';
-var yearSel = document.getElementById('yearSel');
-var seasonGrid = document.getElementById('seasonGrid');
-var yearGrid = document.getElementById('yearGrid');
-var toast = document.getElementById('toast');
-
-var seasonKeys = ['winter','spring','summer','fall'];
-var seasonLabels = ['Winter','Spring','Summer','Fall'];
-
-function buildGrid() {
-  var y = yearSel.value;
-  var now = new Date().getFullYear();
-  var isNextYear = parseInt(y) === now + 1;
-  var count = isNextYear ? 1 : 4;
-
-  var sh = '';
-  for (var i = 0; i < count; i++) {
-    var k = seasonKeys[i];
-    var lbl = seasonLabels[i];
-    var url = base + '/' + y + '/' + k + '-series.json';
-    var urlNew = base + '/' + y + '/' + k + '-series-new.json';
-    sh += '<div class=\"box\">'
-      + '<div class=\"hdr\"><span class=\"lbl\">' + lbl + '</span><span class=\"badge badge-sonarr\">Sonarr</span></div>'
-      + '<div class=\"btn-row\">'
-      + '<button class=\"btn btn-copy\" onclick=\"copyUrl(\'' + url + '\')\">Copy URL</button>'
-      + '<button class=\"btn btn-new\" onclick=\"copyUrl(\'' + urlNew + '\')\">New only</button>'
-      + '</div></div>';
-  }
-  seasonGrid.innerHTML = sh;
-  seasonGrid.className = 'grid seasons' + (count === 1 ? ' single' : '');
-
-  if (!isNextYear) {
-    var url = base + '/' + y + '/series.json';
-    var urlNew = base + '/' + y + '/series-new.json';
-    yearGrid.innerHTML = '<div class=\"box\">'
-      + '<div class=\"hdr\"><span class=\"lbl\">' + y + ' Full Year</span><span class=\"badge badge-sonarr\">Sonarr</span></div>'
-      + '<div class=\"btn-row\">'
-      + '<button class=\"btn btn-copy\" onclick=\"copyUrl(\'' + url + '\')\">Copy URL</button>'
-      + '<button class=\"btn btn-new\" onclick=\"copyUrl(\'' + urlNew + '\')\">New only</button>'
-      + '</div></div>';
-    yearGrid.className = 'grid year';
-  } else {
-    yearGrid.innerHTML = '';
-  }
-}
-
-function copyUrl(url) {
-  navigator.clipboard.writeText(url);
-  showToast('Copied: ' + url.split('/').pop());
-}
-
-function showToast(msg) {
-  toast.textContent = msg;
-  toast.style.display = 'block';
-  setTimeout(function() { toast.style.display = 'none'; }, 2000);
-}
-
-yearSel.addEventListener('change', buildGrid);
-buildGrid();
-</script>
-</body>
-</html>`
+	html := indexTemplate
+	html = strings.ReplaceAll(html, "{{BASE_URL}}", baseURL)
+	html = strings.ReplaceAll(html, "{{YEAR_OPTIONS}}", yearOpts)
 
 	indexPath := filepath.Join(dir, "index.html")
 	return os.WriteFile(indexPath, []byte(html), 0644)
