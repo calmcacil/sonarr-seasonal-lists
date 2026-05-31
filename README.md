@@ -45,7 +45,8 @@ go build ./cmd/anilistgen
 ./anilistgen -output ./sonarr-lists
 ```
 
-See [SELFHOSTING.md](./SELFHOSTING.md) for running your own setup.
+See [Docs/SELFHOSTING.md](./Docs/SELFHOSTING.md) for running your own
+setup (local cron, fork on GitHub, other hosting).
 
 ---
 
@@ -72,69 +73,39 @@ See [SELFHOSTING.md](./SELFHOSTING.md) for running your own setup.
 
 ## Configuration
 
-Config loaded from (first found wins):
-1. `-config` flag path
-2. `./anilistgen.yaml`
-3. `~/.config/anilistgen/anilistgen.yaml`
+See [Docs/CONFIGURATION.md](./Docs/CONFIGURATION.md) for the full config
+reference, all fields, and environment variables.
 
-All settings can also be set via `ALG_`-prefixed environment variables.
-
-### Config reference
+Quick summary of the config file (`anilistgen.yaml`):
 
 ```yaml
 anilist:
   years: [2026]
-  seasons: [all]            # or: winter, spring, summer, fall
+  seasons: [all]
   max_per_season: 100
   include_ona: false
   winter_overflow: true
   ahead_months: 3
-  exclude_tags: []          # e.g. ["Hentai"]
+  exclude_tags: []
 
-blacklist: []               # MAL ID or title substring
+blacklist: []
 
 output_dir: ./sonarr-lists
 
-community_mapping_path: /tmp/anilistgen_tvdb.yaml   # auto-downloaded
-anime_lists_path: /tmp/anime-list-full.xml           # auto-downloaded
+community_mapping_path: /tmp/anilistgen_tvdb.yaml
+anime_lists_path: /tmp/anime-list-full.xml
 
 logging:
   level: info
   file: ""
 ```
 
-### Environment variables
-
-| Env var | Config field | Default |
-|---|---|---|
-| `ALG_ANILIST_YEARS` | `anilist.years` | current year |
-| `ALG_ANILIST_SEASONS` | `anilist.seasons` | `all` |
-| `ALG_ANILIST_MAX_PER_SEASON` | `anilist.max_per_season` | `100` |
-| `ALG_ANILIST_INCLUDE_ONA` | `anilist.include_ona` | `false` |
-| `ALG_ANILIST_WINTER_OVERFLOW` | `anilist.winter_overflow` | `true` |
-| `ALG_ANILIST_EXCLUDE_TAGS` | `anilist.exclude_tags` | `""` |
-| `ALG_ANILIST_AHEAD_MONTHS` | `anilist.ahead_months` | `3` |
-| `ALG_BLACKLIST` | `blacklist` | `""` |
-| `ALG_OUTPUT_DIR` | `output_dir` | `./sonarr-lists` |
-| `ALG_LOG_LEVEL` | `logging.level` | `info` |
-| `ALG_LOG_FILE` | `logging.file` | `""` (stderr) |
-
-Lists are comma-separated (`2026,2027`). Booleans accept `true`/`1` or `false`/`0`.
-
-### Filters
-
-- **Duration** — skips shows ≤ 10 min per episode
-- **Format** — TV only by default; ONA via `include_ona: true`
-- **Blacklist** — exclude by MAL ID or title substring (case-insensitive)
-- **Tags** — exclude by AniList content tag (e.g. `"Hentai"`)
-- **Ahead** — skip shows starting more than N months in the future
-
 ---
 
 ## Output format
 
-Files are bare JSON arrays — Sonarr's Custom List import expects this
-exactly. Output is split by category:
+Files are bare JSON arrays — Sonarr's Custom List import requires this.
+Output is split by category:
 
 | Prefix | Contents |
 |---|---|
@@ -142,12 +113,13 @@ exactly. Output is split by category:
 | `movies-` | Movies, OVAs, and specials |
 
 **`series-winter-2026.json`** (and `series-2026.json`):
+
 ```json
 [{"tvdbId":377543,"title":"..."},{"tvdbId":424536,"title":"..."}]
 ```
 
 JSON is minified. Sonarr reads `tvdbId`; `title` is cosmetic.
-Empty categories are skipped.
+Empty categories produce no file.
 
 ---
 
@@ -162,9 +134,18 @@ Empty categories are skipped.
 
 ---
 
+## Further reading
+
+| Document | Contents |
+|---|---|
+| [Docs/CONFIGURATION.md](./Docs/CONFIGURATION.md) | Full config reference, env vars |
+| [Docs/EXPLANATION.md](./Docs/EXPLANATION.md) | Architecture, pipeline, data sources |
+| [Docs/SELFHOSTING.md](./Docs/SELFHOSTING.md) | Local, fork, and custom hosting setups |
+| [Docs/AGENTS.md](./Docs/AGENTS.md) | LLM agent guide for the codebase |
+
 ## Contributing
 
-1. Read [`EXPLANATION.md`](./EXPLANATION.md) for architecture and design.
+1. Read [`Docs/AGENTS.md`](./Docs/AGENTS.md) for architecture.
 2. Run `go vet ./...` and `go test ./...` before submitting.
 3. Config files are in `.gitignore` — never commit API keys.
 4. Build with `go build ./cmd/anilistgen`.
