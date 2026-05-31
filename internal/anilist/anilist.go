@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,7 +17,7 @@ import (
 const (
 	apiBase           = "https://graphql.anilist.co"
 	maxRetry          = 5
-	rateLimitDelay    = 500 * time.Millisecond
+	rateLimitDelay    = 700 * time.Millisecond
 	rateLimitBackoff  = 5 * time.Second
 	maxPerPage        = 50
 )
@@ -212,6 +213,16 @@ func New() *Client {
 	}
 }
 
+// jitter returns d randomly varied by ±25% to prevent synchronized retry storms.
+func jitter(d time.Duration) time.Duration {
+	if d <= 0 {
+		return d
+	}
+	quarter := d / 4
+	offset := time.Duration(rand.Int64N(int64(2*quarter + 1))) - quarter
+	return d + offset
+}
+
 // throttle ensures we don't exceed AniList rate limits.
 // After a 429 response, backs off to 5s for 30 seconds.
 func (c *Client) throttle() {
@@ -219,6 +230,7 @@ func (c *Client) throttle() {
 	if time.Since(c.lastRateLimit) < 30*time.Second {
 		minDelay = rateLimitBackoff
 	}
+	minDelay = jitter(minDelay)
 	elapsed := time.Since(c.lastCall)
 	if elapsed < minDelay {
 		time.Sleep(minDelay - elapsed)
@@ -334,8 +346,8 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 	var lastErr error
 	for attempt := range maxRetry {
 		if attempt > 0 {
-			// Exponential backoff: 2s, 4s, 8s, 16s
-			time.Sleep(time.Duration(1<<attempt) * time.Second)
+			// Exponential backoff: 2s, 4s, 8s, 16s (+ jitter)
+			time.Sleep(jitter(time.Duration(1<<attempt) * time.Second))
 		}
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodPost, apiBase,
@@ -366,9 +378,13 @@ func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			respBody, _ := io.ReadAll(resp.Body)
+			respBody, readErr := io.ReadAll(resp.Body)
 			resp.Body.Close()
-			lastErr = fmt.Errorf("API error (HTTP %d): %s", resp.StatusCode, string(respBody))
+			if readErr != nil {
+				lastErr = fmt.Errorf("API error (HTTP %d): failed to read response body: %w", resp.StatusCode, readErr)
+			} else {
+				lastErr = fmt.Errorf("API error (HTTP %d): %s", resp.StatusCode, string(respBody))
+			}
 			continue
 		}
 

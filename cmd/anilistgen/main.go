@@ -21,6 +21,9 @@ import (
 	"github.com/calmcacil/anilistgen/internal/output"
 )
 
+// version is set at build time via -ldflags, e.g.:
+//
+//	go build -ldflags="-X main.version=$(git describe --tags)" ./cmd/anilistgen
 var version = "dev"
 
 func main() {
@@ -58,7 +61,7 @@ func run() error {
 			printUsage()
 			return nil
 		}
-		return fmt.Errorf("%w", err)
+		return fmt.Errorf("parse flags: %w", err)
 	}
 
 	if help {
@@ -193,7 +196,7 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 		formats = append(formats, "ONA")
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.AniList.TimeoutMinutes)*time.Minute)
 	defer cancel()
 
 	sigCh := make(chan os.Signal, 1)
@@ -275,50 +278,23 @@ func processSeason(ctx context.Context, client *anilist.Client, cfg *config.Conf
 	}
 
 	if season == "WINTER" {
-		var filtered []anilist.Show
-		for _, sh := range shows {
-			if sh.IsWinterStart() {
-				filtered = append(filtered, sh)
-			} else {
-				slog.Debug("skipped winter show outside season range",
-					"title", sh.DisplayTitle(),
-					"month", sh.StartDate.Month)
-			}
-		}
-		if len(filtered) != len(shows) {
-			slog.Info("filtered winter shows by start month",
-				"total", len(shows),
-				"kept", len(filtered),
-				"removed", len(shows)-len(filtered))
-		}
-		shows = filtered
+		shows = filterWinterMonth(shows, "winter shows")
 	}
 
 	slog.Info("fetched shows from AniList",
 		"season", season, "year", year, "count", len(shows))
 
-	seasonSeries := make([]anilist.Show, 0)
-	seasonNew := make([]anilist.Show, 0)
-	for _, sh := range shows {
-		if sh.IsSeries() {
-			seasonSeries = append(seasonSeries, sh)
-			if sh.IsNew() {
-				seasonNew = append(seasonNew, sh)
-			}
-		}
-	}
+	seasonSeries, seasonNew := splitSeriesNew(shows)
 
 	seasonSeries = filter.Filter(seasonSeries, filter.Config{
 		Blacklist:   cfg.Blacklist,
 		ExcludeTags: cfg.AniList.ExcludeTags,
-		AheadMonths: aheadMonths,
 	})
 	seasonSeries = filter.FilterFuture(seasonSeries, aheadMonths)
 
 	seasonNew = filter.Filter(seasonNew, filter.Config{
 		Blacklist:   cfg.Blacklist,
 		ExcludeTags: cfg.AniList.ExcludeTags,
-		AheadMonths: aheadMonths,
 	})
 	seasonNew = filter.FilterFuture(seasonNew, aheadMonths)
 
@@ -374,40 +350,20 @@ func fetchAndAppendNextWinter(ctx context.Context, client *anilist.Client, cfg *
 		return
 	}
 
-	var filtered []anilist.Show
-	for _, sh := range shows {
-		if sh.IsWinterStart() {
-			filtered = append(filtered, sh)
-		} else {
-			slog.Debug("skipped winter show outside season range",
-				"title", sh.DisplayTitle(),
-				"month", sh.StartDate.Month)
-		}
+	if cfg.AniList.WinterOverflow && nextWinter >= time.Now().Year() {
+		shows = fetchWinterOverflow(ctx, client, nextWinter, cfg.AniList.MaxPerSeason, formats, shows)
 	}
-	if len(filtered) != len(shows) {
-		slog.Info("filtered next winter shows by start month",
-			"total", len(shows),
-			"kept", len(filtered),
-			"removed", len(shows)-len(filtered))
-	}
-	shows = filtered
+
+	shows = filterWinterMonth(shows, "next winter shows")
 
 	shows = filter.Filter(shows, filter.Config{
 		Blacklist:   cfg.Blacklist,
 		ExcludeTags: cfg.AniList.ExcludeTags,
-		AheadMonths: aheadMonths,
 	})
 	shows = filter.FilterFuture(shows, aheadMonths)
 
 	var seasonSeries, seasonNew []anilist.Show
-	for _, sh := range shows {
-		if sh.IsSeries() {
-			seasonSeries = append(seasonSeries, sh)
-			if sh.IsNew() {
-				seasonNew = append(seasonNew, sh)
-			}
-		}
-	}
+	seasonSeries, seasonNew = splitSeriesNew(shows)
 
 	key := fmt.Sprintf("WINTER-%d", nextWinter)
 	seriesShows[key] = seasonSeries
@@ -462,4 +418,38 @@ func setupLogging(cfg *config.Config, verbose bool) (func(), error) {
 		level = "debug"
 	}
 	return logging.Setup(level, cfg.Logging.File)
+}
+
+func filterWinterMonth(shows []anilist.Show, label string) []anilist.Show {
+	var filtered []anilist.Show
+	for _, sh := range shows {
+		if sh.IsWinterStart() {
+			filtered = append(filtered, sh)
+		} else {
+			slog.Debug("skipped winter show outside season range",
+				"title", sh.DisplayTitle(),
+				"month", sh.StartDate.Month)
+		}
+	}
+	if len(filtered) != len(shows) {
+		slog.Info("filtered "+label+" by start month",
+			"total", len(shows),
+			"kept", len(filtered),
+			"removed", len(shows)-len(filtered))
+	}
+	return filtered
+}
+
+func splitSeriesNew(shows []anilist.Show) (series, seasonNew []anilist.Show) {
+	series = make([]anilist.Show, 0)
+	seasonNew = make([]anilist.Show, 0)
+	for _, sh := range shows {
+		if sh.IsSeries() {
+			series = append(series, sh)
+			if sh.IsNew() {
+				seasonNew = append(seasonNew, sh)
+			}
+		}
+	}
+	return
 }

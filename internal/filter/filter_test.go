@@ -127,6 +127,9 @@ func TestIsBlacklisted(t *testing.T) {
 	if isBlacklisted("Naruto", 0, []string{"One Piece"}) {
 		t.Error("expected no match")
 	}
+	if isBlacklisted("anything", 0, []string{"", "16498"}) {
+		t.Error("empty entry should be skipped")
+	}
 }
 
 func TestHasExcludedTag(t *testing.T) {
@@ -138,5 +141,8 @@ func TestHasExcludedTag(t *testing.T) {
 	}
 	if hasExcludedTag(show, []string{"Guro"}) {
 		t.Error("expected guro tag not to match")
+	}
+	if !hasExcludedTag(show, []string{"", "Hentai"}) {
+		t.Error("empty entry should not prevent matching valid entries")
 	}
 }

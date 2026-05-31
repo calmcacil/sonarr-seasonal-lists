@@ -19,12 +19,16 @@ type Show struct {
 	Title  string `json:"title,omitempty"`
 }
 
+// WriteSeasonJSON writes a compact JSON array of shows for a single
+// season and year (e.g., 2026/winter-series.json).
 func WriteSeasonJSON(dir, category, season string, year int, shows []Show) error {
 	yearDir := filepath.Join(dir, fmt.Sprintf("%d", year))
 	filename := fmt.Sprintf("%s-%s.json", strings.ToLower(season), category)
 	return writeJSON(yearDir, filename, shows)
 }
 
+// WriteYearJSON writes a compact JSON array of shows aggregated across all
+// seasons for a given year (e.g., 2026/series.json).
 func WriteYearJSON(dir, category string, year int, shows []Show) error {
 	yearDir := filepath.Join(dir, fmt.Sprintf("%d", year))
 	filename := fmt.Sprintf("%s.json", category)
@@ -49,6 +53,8 @@ func writeJSON(dir, filename string, shows []Show) error {
 	return nil
 }
 
+// WriteAllJSON writes per-season JSON files, yearly aggregates, and (for the
+// "series" category) an HTML index page with Sonarr setup instructions.
 func WriteAllJSON(outputDir, baseURL, category string, seasonal map[string][]Show, indexYears []int) error {
 	byYear := map[int][]Show{}
 
@@ -94,6 +100,8 @@ func WriteAllJSON(outputDir, baseURL, category string, seasonal map[string][]Sho
 	return nil
 }
 
+// WriteIndex generates an HTML index page with year selector, season boxes,
+// and Sonarr import list setup instructions.
 func WriteIndex(dir, baseURL string, years []int) error {
 	if len(years) == 0 {
 		years = append(years, time.Now().Year())

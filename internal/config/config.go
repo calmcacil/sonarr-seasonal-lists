@@ -29,6 +29,7 @@ type AniListConfig struct {
 	WinterOverflow bool     `yaml:"winter_overflow"`
 	AheadMonths    *int     `yaml:"ahead_months"`
 	ExcludeTags    []string `yaml:"exclude_tags"`
+	TimeoutMinutes int      `yaml:"timeout_minutes"`
 }
 
 type LoggingConfig struct {
@@ -42,6 +43,9 @@ const (
 	DefaultBaseURL      = "https://lists.calmcacil.dev"
 )
 
+// Season resolves the configured season strings to uppercase season codes.
+// If seasons are empty or contains "all" (case-insensitive), returns all four
+// seasons. Duplicates are removed.
 func (a *AniListConfig) Season() []string {
 	if len(a.Seasons) == 0 {
 		return AllSeasons()
@@ -71,6 +75,7 @@ func (a *AniListConfig) Season() []string {
 	return seasons
 }
 
+// AllSeasons returns the four standard anime seasons in uppercase.
 func AllSeasons() []string {
 	return []string{"WINTER", "SPRING", "SUMMER", "FALL"}
 }
@@ -96,6 +101,9 @@ func (c *Config) FillDefaults() {
 	if c.AniList.AheadMonths == nil {
 		v := 3
 		c.AniList.AheadMonths = &v
+	}
+	if c.AniList.TimeoutMinutes <= 0 {
+		c.AniList.TimeoutMinutes = 10
 	}
 	if c.OutputDir == "" {
 		c.OutputDir = "./sonarr-lists"
@@ -142,6 +150,8 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// DefaultConfig returns a new Config with sensible defaults: all seasons,
+// current year, winter overflow enabled, 3-month ahead window, and info logging.
 func DefaultConfig() *Config {
 	v := 3
 	return &Config{
@@ -152,6 +162,7 @@ func DefaultConfig() *Config {
 			IncludeONA:     false,
 			WinterOverflow: true,
 			AheadMonths:    &v,
+			TimeoutMinutes: 10,
 		},
 		OutputDir:            "./sonarr-lists",
 		CommunityMappingPath: DefaultMappingPath,
@@ -263,8 +274,17 @@ func (c *Config) applyEnvOverrides() {
 	if v := os.Getenv(envPrefix + "LOG_FILE"); v != "" {
 		c.Logging.File = v
 	}
+
+	if v := os.Getenv(envPrefix + "ANILIST_TIMEOUT_MINUTES"); v != "" {
+		if m, err := strconv.Atoi(v); err == nil && m > 0 {
+			c.AniList.TimeoutMinutes = m
+		}
+	}
 }
 
+// Load searches for a config file using the provided path and default search
+// paths. Returns the loaded config, the file path used, or an error. If no file
+// is found, returns a default config with an empty path.
 func Load(path string) (*Config, string, error) {
 	paths := searchPaths(path)
 
@@ -339,6 +359,8 @@ func searchPaths(cliPath string) []string {
 	return paths
 }
 
+// WriteDefaultConfig writes a documented default configuration YAML file to
+// the given path, creating directories as needed.
 func WriteDefaultConfig(path string) error {
 	content := `# anilistgen configuration
 
@@ -365,6 +387,9 @@ anilist:
 
   # Skip shows starting more than N months ahead. Default: 3
   ahead_months: 3
+
+  # Context timeout in minutes. Increase for large backfills. Default: 10
+  timeout_minutes: 10
 
   # AniList content tags to exclude. Shows with any matching tag
   # (case-insensitive) are skipped entirely.
@@ -401,6 +426,8 @@ logging:
 	return nil
 }
 
+// ResolveConfigPath returns the path to an existing config file, or the
+// default XDG config path if none exists. If cliPath is non-empty, returns it.
 func ResolveConfigPath(cliPath string) string {
 	if cliPath != "" {
 		return cliPath

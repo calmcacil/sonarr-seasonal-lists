@@ -11,9 +11,10 @@ import (
 type Config struct {
 	Blacklist   []string
 	ExcludeTags []string
-	AheadMonths int
 }
 
+// Filter removes shows with short duration, matching blacklist entries, or
+// excluded content tags. Returns the filtered slice.
 func Filter(shows []anilist.Show, cfg Config) []anilist.Show {
 	var filtered []anilist.Show
 	for _, show := range shows {
@@ -88,6 +89,8 @@ func hasExcludedTag(show anilist.Show, tags []string) bool {
 	return false
 }
 
+// FilterFuture removes shows whose start date is more than aheadMonths
+// months in the future. Returns the original slice if aheadMonths is <= 0.
 func FilterFuture(shows []anilist.Show, aheadMonths int) []anilist.Show {
 	if aheadMonths <= 0 {
 		return shows

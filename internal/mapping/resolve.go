@@ -17,6 +17,8 @@ type ResolvedShow struct {
 	Resolved bool
 }
 
+// NewResolver creates a Resolver that uses the given community mapping for
+// MAL-to-TVDB ID lookups.
 func NewResolver(cm *CommunityMapping) *Resolver {
 	return &Resolver{community: cm}
 }

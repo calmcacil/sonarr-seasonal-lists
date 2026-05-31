@@ -19,16 +19,16 @@ type tvdbMappingFile struct {
 }
 
 type TvdbEntry struct {
-	MALID  int    `yaml:"malid"`
-	TVDBID int    `yaml:"tvdbid"`
-	Season int    `yaml:"tvdbseason"`
-	Title  string `yaml:"title"`
+	MALID  int `yaml:"malid"`
+	TVDBID int `yaml:"tvdbid"`
 }
 
 type CommunityMapping struct {
 	data map[int]int
 }
 
+// LoadCommunityMapping reads a YAML TVDB-to-MAL mapping file. If the file
+// does not exist, it downloads the latest community mapping from GitHub.
 func LoadCommunityMapping(path string) (*CommunityMapping, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
