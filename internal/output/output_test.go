@@ -28,25 +28,19 @@ func TestWriteSeasonJSON(t *testing.T) {
 		t.Fatalf("read file: %v", err)
 	}
 
-	var so SeasonOutput
-	if err := json.Unmarshal(data, &so); err != nil {
+	var got []Show
+	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if so.Season != "winter" {
-		t.Errorf("expected season 'winter', got %q", so.Season)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 shows, got %d", len(got))
 	}
-	if so.Year != 2026 {
-		t.Errorf("expected year 2026, got %d", so.Year)
+	if got[0].TVDBID != 12345 {
+		t.Errorf("expected TVDB 12345, got %d", got[0].TVDBID)
 	}
-	if len(so.Shows) != 2 {
-		t.Fatalf("expected 2 shows, got %d", len(so.Shows))
-	}
-	if so.Shows[0].TVDBID != 12345 {
-		t.Errorf("expected TVDB 12345, got %d", so.Shows[0].TVDBID)
-	}
-	if so.Shows[0].Title != "Test Show" {
-		t.Errorf("expected title 'Test Show', got %q", so.Shows[0].Title)
+	if got[0].Title != "Test Show" {
+		t.Errorf("expected title 'Test Show', got %q", got[0].Title)
 	}
 }
 
@@ -92,16 +86,13 @@ func TestWriteYearJSON(t *testing.T) {
 		t.Fatalf("read file: %v", err)
 	}
 
-	var yo YearOutput
-	if err := json.Unmarshal(data, &yo); err != nil {
+	var got []Show
+	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
 
-	if yo.Year != 2026 {
-		t.Errorf("expected year 2026, got %d", yo.Year)
-	}
-	if len(yo.Shows) != 2 {
-		t.Errorf("expected 2 shows, got %d", len(yo.Shows))
+	if len(got) != 2 {
+		t.Errorf("expected 2 shows, got %d", len(got))
 	}
 }
 
@@ -141,5 +132,27 @@ func TestWriteAllJSON(t *testing.T) {
 	}
 	if !files["2026.json"] {
 		t.Error("missing 2026.json")
+	}
+}
+
+func TestWriteSeasonJSON_StartsAsArray(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	shows := []Show{{TVDBID: 1, Title: "T"}}
+
+	err := WriteSeasonJSON(dir, "fall", 2026, shows)
+	if err != nil {
+		t.Fatalf("WriteSeasonJSON: %v", err)
+	}
+
+	path := filepath.Join(dir, "fall-2026.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	if data[0] != '[' {
+		t.Errorf("expected JSON array starting with '[', got %c", data[0])
 	}
 }

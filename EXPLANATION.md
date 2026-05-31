@@ -91,19 +91,16 @@ in the current year's results.
 
 ## Output format
 
-### Season file
+Both files are bare JSON arrays — Sonarr's Custom List import requires
+a top-level array, not a wrapped object.
 
+**`winter-2026.json`** (and `2026.json`):
 ```json
-{"season":"winter","year":2026,"generated_at":"2026-01-15T00:00:00Z","shows":[{"tvdbId":377543,"title":"..."}]}
+[{"tvdbId":377543,"title":"..."},{"tvdbId":424536,"title":"..."}]
 ```
 
-### Yearly file (`2026.json`)
-
-Same structure without the `season` field. Aggregates all resolved shows
-across all seasons for the year.
-
-JSON is minified (no whitespace). Sonarr's Custom List import reads the
-`tvdbId` field. The `title` field is for human readability only.
+JSON is minified (no whitespace). Sonarr reads `tvdbId`; `title` is
+cosmetic.
 
 ## Key design decisions
 

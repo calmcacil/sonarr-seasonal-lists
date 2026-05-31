@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
 
 type Show struct {
@@ -14,35 +13,23 @@ type Show struct {
 	Title  string `json:"title,omitempty"`
 }
 
-type SeasonOutput struct {
-	Season      string `json:"season"`
-	Year        int    `json:"year"`
-	GeneratedAt string `json:"generated_at"`
-	Shows       []Show `json:"shows"`
-}
-
-type YearOutput struct {
-	Year        int    `json:"year"`
-	GeneratedAt string `json:"generated_at"`
-	Shows       []Show `json:"shows"`
-}
-
 func WriteSeasonJSON(dir, season string, year int, shows []Show) error {
-	so := SeasonOutput{
-		Season:      strings.ToLower(season),
-		Year:        year,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Shows:       shows,
-	}
-
 	filename := fmt.Sprintf("%s-%d.json", strings.ToLower(season), year)
-	outPath := filepath.Join(dir, filename)
+	return writeJSON(dir, filename, shows)
+}
 
-	data, err := json.Marshal(so)
+func WriteYearJSON(dir string, year int, shows []Show) error {
+	filename := fmt.Sprintf("%d.json", year)
+	return writeJSON(dir, filename, shows)
+}
+
+func writeJSON(dir, filename string, shows []Show) error {
+	data, err := json.Marshal(shows)
 	if err != nil {
 		return fmt.Errorf("marshal JSON: %w", err)
 	}
 
+	outPath := filepath.Join(dir, filename)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("create output dir: %w", err)
 	}
@@ -70,7 +57,6 @@ func WriteAllJSON(outputDir string, seasonal map[string][]Show) error {
 		if err := WriteSeasonJSON(outputDir, season, year, shows); err != nil {
 			return fmt.Errorf("write %s: %w", key, err)
 		}
-
 		byYear[year] = append(byYear[year], shows...)
 	}
 
@@ -78,28 +64,6 @@ func WriteAllJSON(outputDir string, seasonal map[string][]Show) error {
 		if err := WriteYearJSON(outputDir, year, shows); err != nil {
 			return fmt.Errorf("write year %d: %w", year, err)
 		}
-	}
-
-	return nil
-}
-
-func WriteYearJSON(dir string, year int, shows []Show) error {
-	yo := YearOutput{
-		Year:        year,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		Shows:       shows,
-	}
-
-	filename := fmt.Sprintf("%d.json", year)
-	outPath := filepath.Join(dir, filename)
-
-	data, err := json.Marshal(yo)
-	if err != nil {
-		return fmt.Errorf("marshal year JSON: %w", err)
-	}
-
-	if err := os.WriteFile(outPath, data, 0644); err != nil {
-		return fmt.Errorf("write year JSON file: %w", err)
 	}
 
 	return nil
