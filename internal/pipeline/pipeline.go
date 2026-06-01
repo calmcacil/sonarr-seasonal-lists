@@ -17,7 +17,7 @@ type Deps struct {
 	Resolver       *mapping.Resolver
 	FilterConfig   filter.Config
 	WinterOverflow bool
-	MaxPerSeason   int
+	MaxPerYear     int
 	AheadMonths    int
 	Formats        []string
 }
@@ -46,27 +46,55 @@ func Run(ctx context.Context, deps Deps, years []int, seasons []string) (map[mod
 	var errs []error
 
 	for _, year := range years {
-		for _, season := range seasons {
-			result := Process(ctx, deps, season, year)
-			allStats = append(allStats, result.Stats)
-			if result.Err != nil {
-				errs = append(errs, result.Err)
-				continue
+		slog.Info("fetching year", "year", year)
+		shows, err := deps.AniClient.FetchYear(ctx, year, deps.MaxPerYear, deps.Formats)
+		if err != nil {
+			slog.Error("fetch year failed", "year", year, "error", err)
+			for _, season := range seasons {
+				allStats = append(allStats, Stats{Season: season, Year: year})
+				errs = append(errs, fmt.Errorf("year %d: %w", year, err))
 			}
-			allSeries[result.Key] = result.All
-			allNew[result.Key] = result.NewOnly
+			continue
 		}
-	}
 
-	if len(years) > 0 && len(seasons) == 4 {
-		nextWinter := years[len(years)-1] + 1
-		result := Process(ctx, deps, "WINTER", nextWinter)
-		allStats = append(allStats, result.Stats)
-		if result.Err != nil {
-			errs = append(errs, result.Err)
-		} else {
-			allSeries[result.Key] = result.All
-			allNew[result.Key] = result.NewOnly
+		slog.Info("fetched shows from AniList", "year", year, "count", len(shows))
+
+		if deps.WinterOverflow {
+			shows = winterOverflow(ctx, deps.AniClient, year, deps.MaxPerYear, deps.Formats, shows)
+		}
+
+		bySeason := groupBySeason(shows)
+
+		for _, season := range seasons {
+			seasonShows := bySeason[season]
+
+			stats := Stats{Season: season, Year: year, Fetched: len(seasonShows)}
+
+			if season == "WINTER" {
+				before := len(seasonShows)
+				seasonShows = filterWinterMonth(seasonShows, "winter shows")
+				stats.Filtered += before - len(seasonShows)
+			}
+
+			series, newOnly := splitSeriesNew(seasonShows)
+
+			series = filter.Filter(series, deps.FilterConfig)
+			newOnly = filter.Filter(newOnly, deps.FilterConfig)
+
+			series = filter.FilterFuture(series, deps.AheadMonths)
+			newOnly = filter.FilterFuture(newOnly, deps.AheadMonths)
+
+			resolvedAll := deps.Resolver.Project(series)
+			resolvedNew := deps.Resolver.Project(newOnly)
+
+			key := model.SeasonKey{Season: season, Year: year}
+			allSeries[key] = resolvedAll
+			allNew[key] = resolvedNew
+
+			stats.Resolved = len(resolvedAll) + len(resolvedNew)
+			stats.Unmatched = len(series) + len(newOnly) - stats.Resolved
+
+			allStats = append(allStats, stats)
 		}
 	}
 
@@ -77,7 +105,7 @@ func Process(ctx context.Context, deps Deps, season string, year int) Result {
 	key := model.SeasonKey{Season: season, Year: year}
 	slog.Info("fetching season", "season", season, "year", year)
 
-	shows, err := deps.AniClient.FetchSeason(ctx, season, year, deps.MaxPerSeason, deps.Formats)
+	shows, err := deps.AniClient.FetchSeason(ctx, season, year, deps.MaxPerYear, deps.Formats)
 	if err != nil {
 		slog.Error("fetch failed", "season", season, "year", year, "error", err)
 		return Result{Key: key, Err: err, Stats: Stats{Season: season, Year: year}}
@@ -86,7 +114,7 @@ func Process(ctx context.Context, deps Deps, season string, year int) Result {
 	stats := Stats{Fetched: len(shows)}
 
 	if deps.WinterOverflow && season == "WINTER" {
-		shows = winterOverflow(ctx, deps.AniClient, year, deps.MaxPerSeason, deps.Formats, shows)
+		shows = winterOverflow(ctx, deps.AniClient, year, deps.MaxPerYear, deps.Formats, shows)
 	}
 
 	if season == "WINTER" {
@@ -107,13 +135,8 @@ func Process(ctx context.Context, deps Deps, season string, year int) Result {
 	newOnly = filter.Filter(newOnly, deps.FilterConfig)
 	newOnly = filter.FilterFuture(newOnly, deps.AheadMonths)
 
-	resolvedAll, allStats := resolveShows(deps.Resolver, series)
-	stats.Resolved += allStats.Resolved
-	stats.Unmatched += allStats.Unmatched
-
-	resolvedNew, newStats := resolveShows(deps.Resolver, newOnly)
-	stats.Resolved += newStats.Resolved
-	stats.Unmatched += newStats.Unmatched
+	resolvedAll := deps.Resolver.Project(series)
+	resolvedNew := deps.Resolver.Project(newOnly)
 
 	return Result{
 		Key:     key,
@@ -130,15 +153,9 @@ func Process(ctx context.Context, deps Deps, season string, year int) Result {
 	}
 }
 
-func resolveShows(resolver *mapping.Resolver, shows []model.Show) ([]output.Show, Stats) {
-	resolved := resolver.Project(shows)
-	unmatched := len(shows) - len(resolved)
-	return resolved, Stats{Resolved: len(resolved), Unmatched: unmatched, Fetched: len(shows)}
-}
-
-func winterOverflow(ctx context.Context, client *anilist.Client, year, maxPerSeason int, formats []string, shows []model.Show) []model.Show {
+func winterOverflow(ctx context.Context, client *anilist.Client, year, maxPerYear int, formats []string, shows []model.Show) []model.Show {
 	overflowYear := year - 1
-	overflow, err := client.FetchSeason(ctx, "WINTER", overflowYear, maxPerSeason, formats)
+	overflow, err := client.FetchSeason(ctx, "WINTER", overflowYear, maxPerYear, formats)
 	if err != nil {
 		slog.Warn("winter overflow fetch failed, continuing without overflow",
 			"year", overflowYear, "error", err)
@@ -204,6 +221,21 @@ func splitSeriesNew(shows []model.Show) (series, seasonNew []model.Show) {
 		}
 	}
 	return
+}
+
+func groupBySeason(shows []model.Show) map[string][]model.Show {
+	m := map[string][]model.Show{
+		"WINTER":  {},
+		"SPRING":  {},
+		"SUMMER":  {},
+		"FALL":    {},
+		"UNKNOWN": {},
+	}
+	for _, sh := range shows {
+		code := sh.SeasonCode()
+		m[code] = append(m[code], sh)
+	}
+	return m
 }
 
 func ProcessBatch(resolver *mapping.Resolver, all map[model.SeasonKey][]model.Show, dryRun bool) map[model.SeasonKey][]output.Show {

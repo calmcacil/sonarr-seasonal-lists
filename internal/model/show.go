@@ -35,8 +35,20 @@ type Show struct {
 	Genres    []string       `json:"genres"`
 	Tags      []Tag          `json:"tags"`
 	Status    string         `json:"status"`
+	Season    *string        `json:"season"`
 	StartDate FuzzyDate      `json:"startDate"`
 	Relations *RelationBlock `json:"relations,omitempty"`
+}
+
+func (s Show) SeasonCode() string {
+	if s.Season == nil {
+		return "UNKNOWN"
+	}
+	return strings.ToUpper(*s.Season)
+}
+
+func (s Show) IsDecemberStart() bool {
+	return s.StartDate.Month != nil && *s.StartDate.Month == 12
 }
 
 func (s Show) IsSeries() bool {

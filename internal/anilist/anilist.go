@@ -24,9 +24,39 @@ const (
 	maxPerPage       = 50
 )
 
+const yearQueryTemplate = `query($y: Int, $page: Int, $perPage: Int, $formats: [MediaFormat]) {
+	Page(page: $page, perPage: $perPage) {
+		pageInfo {
+			hasNextPage
+			currentPage
+		}
+		media(
+			seasonYear: $y,
+			type: ANIME,
+			sort: POPULARITY_DESC,
+			format_in: $formats
+		) {
+			id
+			idMal
+			title { romaji english }
+			format
+			episodes
+			duration
+			genres
+			tags { name }
+			status
+			season
+			startDate { year month day }
+			relations {
+				edges {
+					node { id idMal title { romaji english } }
+					relationType
+				}
+			}
+		}
+	}
+}`
 
-
-// GraphQL query for fetching seasonal anime with pagination info.
 const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int, $formats: [MediaFormat]) {
 	Page(page: $page, perPage: $perPage) {
 		pageInfo {
@@ -48,6 +78,7 @@ const queryTemplate = `query($s: MediaSeason, $y: Int, $page: Int, $perPage: Int
 			genres
 			tags { name }
 			status
+			season
 			startDate { year month day }
 			relations {
 				edges {
@@ -63,25 +94,21 @@ type graphqlError struct {
 	Message string `json:"message"`
 }
 
-// pageInfo holds pagination metadata from AniList.
 type pageInfo struct {
 	HasNextPage bool `json:"hasNextPage"`
 	CurrentPage int  `json:"currentPage"`
 }
 
-// graphqlResponse is the top-level response from AniList.
-type graphqlResponse struct {
+type pageResponse struct {
 	Data struct {
 		Page struct {
-			PageInfo pageInfo `json:"pageInfo"`
-			Media    []model.Show   `json:"media"`
+			PageInfo pageInfo     `json:"pageInfo"`
+			Media    []model.Show `json:"media"`
 		} `json:"Page"`
 	} `json:"data"`
 	Errors []graphqlError `json:"errors,omitempty"`
 }
 
-// Throttle enforces a minimum delay between API calls, with backoff after 429.
-// It is safe for concurrent use.
 type Throttle struct {
 	mu            sync.Mutex
 	lastCall      time.Time
@@ -90,7 +117,6 @@ type Throttle struct {
 
 func newThrottle() *Throttle { return &Throttle{} }
 
-// jitter returns d randomly varied by ±25% to prevent synchronized retry storms.
 func jitter(d time.Duration) time.Duration {
 	if d <= 0 {
 		return d
@@ -122,14 +148,12 @@ func (t *Throttle) recordRateLimit() {
 	t.mu.Unlock()
 }
 
-// Client fetches data from the AniList GraphQL API.
 type Client struct {
 	http     *http.Client
 	apiBase  string
 	throttle *Throttle
 }
 
-// New creates a new AniList client.
 func New() *Client {
 	return &Client{
 		http:     &http.Client{Timeout: 30 * time.Second},
@@ -138,7 +162,6 @@ func New() *Client {
 	}
 }
 
-// NewWithBase creates a client targeting a specific API base URL (for testing).
 func NewWithBase(base string) *Client {
 	return &Client{
 		http:     &http.Client{Timeout: 30 * time.Second},
@@ -147,10 +170,31 @@ func NewWithBase(base string) *Client {
 	}
 }
 
-// FetchSeason returns anime for the given season, year, and formats.
-// Results are capped at maxResults. Paginates through AniList's 50-per-page limit.
-func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxResults int, formats []string) ([]model.Show, error) {
+func (c *Client) fetchPage(ctx context.Context, payload map[string]any, year int, label string, page int) (pageResponse, error) {
+	c.throttle.wait()
 
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return pageResponse{}, fmt.Errorf("marshal payload: %w", err)
+	}
+
+	var resp pageResponse
+	if err := c.doRequest(ctx, body, &resp); err != nil {
+		return pageResponse{}, fmt.Errorf("fetch %s %d (page %d): %w", label, year, page, err)
+	}
+
+	if len(resp.Errors) > 0 {
+		msgs := make([]string, len(resp.Errors))
+		for i, e := range resp.Errors {
+			msgs[i] = e.Message
+		}
+		return pageResponse{}, fmt.Errorf("AniList GraphQL errors: %s", strings.Join(msgs, "; "))
+	}
+
+	return resp, nil
+}
+
+func (c *Client) FetchYear(ctx context.Context, year int, maxResults int, formats []string) ([]model.Show, error) {
 	perPage := maxPerPage
 	if maxResults > 0 && maxResults < perPage {
 		perPage = maxResults
@@ -166,12 +210,9 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 		default:
 		}
 
-		c.throttle.wait()
-
 		payload := map[string]any{
-			"query": queryTemplate,
+			"query": yearQueryTemplate,
 			"variables": map[string]any{
-				"s":       season,
 				"y":       year,
 				"page":    page,
 				"perPage": perPage,
@@ -179,22 +220,9 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 			},
 		}
 
-		body, err := json.Marshal(payload)
+		resp, err := c.fetchPage(ctx, payload, year, fmt.Sprintf("year %d", year), page)
 		if err != nil {
-			return nil, fmt.Errorf("marshal payload: %w", err)
-		}
-
-		var resp graphqlResponse
-		if err := c.doRequest(ctx, body, &resp); err != nil {
-			return nil, fmt.Errorf("fetch %s %d (page %d): %w", season, year, page, err)
-		}
-
-		if len(resp.Errors) > 0 {
-			msgs := make([]string, len(resp.Errors))
-			for i, e := range resp.Errors {
-				msgs[i] = e.Message
-			}
-			return nil, fmt.Errorf("AniList GraphQL errors: %s", strings.Join(msgs, "; "))
+			return nil, err
 		}
 
 		shows := resp.Data.Page.Media
@@ -218,7 +246,59 @@ func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxRe
 	return allShows, nil
 }
 
-// Ping checks connectivity to the AniList API by fetching a single result.
+func (c *Client) FetchSeason(ctx context.Context, season string, year int, maxResults int, formats []string) ([]model.Show, error) {
+	perPage := maxPerPage
+	if maxResults > 0 && maxResults < perPage {
+		perPage = maxResults
+	}
+
+	var allShows []model.Show
+	page := 1
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		payload := map[string]any{
+			"query": queryTemplate,
+			"variables": map[string]any{
+				"s":       season,
+				"y":       year,
+				"page":    page,
+				"perPage": perPage,
+				"formats": formats,
+			},
+		}
+
+		resp, err := c.fetchPage(ctx, payload, year, fmt.Sprintf("%s %d", season, year), page)
+		if err != nil {
+			return nil, err
+		}
+
+		shows := resp.Data.Page.Media
+		if shows == nil {
+			shows = []model.Show{}
+		}
+		allShows = append(allShows, shows...)
+
+		if !resp.Data.Page.PageInfo.HasNextPage {
+			break
+		}
+
+		if maxResults > 0 && len(allShows) >= maxResults {
+			allShows = allShows[:maxResults]
+			break
+		}
+
+		page++
+	}
+
+	return allShows, nil
+}
+
 func (c *Client) Ping(ctx context.Context) error {
 	c.throttle.wait()
 
@@ -250,12 +330,10 @@ func (c *Client) Ping(ctx context.Context) error {
 	return nil
 }
 
-// doRequest sends a POST request with retries and exponential backoff.
 func (c *Client) doRequest(ctx context.Context, payload []byte, dst any) error {
 	var lastErr error
 	for attempt := range maxRetry {
 		if attempt > 0 {
-			// Exponential backoff: 2s, 4s, 8s, 16s (+ jitter)
 			time.Sleep(jitter(time.Duration(1<<attempt) * time.Second))
 		}
 

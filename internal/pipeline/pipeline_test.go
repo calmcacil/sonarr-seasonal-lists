@@ -48,7 +48,7 @@ func testDeps(baseURL string, resolver *mapping.Resolver) Deps {
 		Resolver:       resolver,
 		FilterConfig:   filter.Config{},
 		WinterOverflow: false,
-		MaxPerSeason:   100,
+		MaxPerYear:     100,
 		AheadMonths:    12,
 		Formats:        []string{"TV"},
 	}
@@ -212,24 +212,12 @@ func TestRun_MultiSeason(t *testing.T) {
 
 	resolver := testMapping(t)
 
-	springShows := []model.Show{
-		{ID: 1, IDMal: makePtr(16498), Format: "TV", Title: model.Title{English: makePtr("Spring Show")}},
-	}
-	summerShows := []model.Show{
-		{ID: 2, IDMal: makePtr(99999), Format: "TV", Title: model.Title{English: makePtr("Summer Show")}},
+	shows := []model.Show{
+		{ID: 1, IDMal: makePtr(16498), Format: "TV", Season: makePtr("SPRING"), Title: model.Title{English: makePtr("Spring Show")}},
+		{ID: 2, IDMal: makePtr(99999), Format: "TV", Season: makePtr("SUMMER"), Title: model.Title{English: makePtr("Summer Show")}},
 	}
 
-	callCount := 0
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		var shows []model.Show
-		if callCount == 1 {
-			shows = springShows
-		} else {
-			shows = summerShows
-		}
-		mockSeasonResponse(shows)(w, r)
-	}))
+	srv := httptest.NewServer(mockSeasonResponse(shows))
 	defer srv.Close()
 	deps := testDeps(srv.URL, resolver)
 
@@ -258,30 +246,36 @@ func TestRun_PartialFailure(t *testing.T) {
 
 	resolver := testMapping(t)
 
-	springShows := []model.Show{
-		{ID: 1, IDMal: makePtr(16498), Format: "TV", Title: model.Title{English: makePtr("Good")}},
-	}
-
-	callCount := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		callCount++
-		if callCount <= 5 {
+		var req struct {
+			Variables struct {
+				Year int `json:"y"`
+			} `json:"variables"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		mockSeasonResponse(springShows)(w, r)
+		if req.Variables.Year == 2024 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		shows := []model.Show{
+			{ID: 1, IDMal: makePtr(16498), Format: "TV", Season: makePtr("SPRING"), Title: model.Title{English: makePtr("Good")}},
+		}
+		mockSeasonResponse(shows)(w, r)
 	}))
 	defer srv.Close()
 	deps := testDeps(srv.URL, resolver)
 
-	series, _, _, errs := Run(context.Background(), deps, []int{2025}, []string{"WINTER", "SPRING"})
+	series, _, _, errs := Run(context.Background(), deps, []int{2024, 2025}, []string{"SPRING"})
 
 	if len(errs) != 1 {
 		t.Errorf("expected 1 error, got %d: %v", len(errs), errs)
 	}
-	springKey := model.SeasonKey{Season: "SPRING", Year: 2025}
-	if s, ok := series[springKey]; !ok || len(s) != 1 {
-		t.Errorf("expected 1 show for SPRING after failed WINTER, got %v", s)
+	key2025 := model.SeasonKey{Season: "SPRING", Year: 2025}
+	if s, ok := series[key2025]; !ok || len(s) != 1 {
+		t.Errorf("expected 1 show for SPRING 2025 after failed 2024, got %v", s)
 	}
 }
 

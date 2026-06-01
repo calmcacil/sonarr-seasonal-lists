@@ -45,7 +45,7 @@ logging:
 |---|---|---|---|
 | `years` | `[int]` | current year | Years to process |
 | `seasons` | `[string]` | `["all"]` | `winter`, `spring`, `summer`, `fall`, or `all` |
-| `max_per_season` | `int` | `100` | Max shows per season (paginated, 50 per page) |
+| `max_per_year` | `int` | `400` | Max shows per year (fetched in one query, then split by season internally) |
 | `include_ona` | `bool` | `false` | Include ONA format alongside TV in series output |
 | `winter_overflow` | `bool` | `true` | Merge December premieres from prior year's WINTER |
 | `ahead_months` | `int` | `3` | Skip shows starting more than N months ahead. `0` disables. |
@@ -55,6 +55,11 @@ logging:
 `include_ona` adds ONA to the series category. Output is split:
 - `series-*` files → TV + ONA (if enabled)
 - `movies-*` files → MOVIE, OVA, SPECIAL
+
+**Note on fetching**: Instead of fetching each season separately, the tool
+now fetches the full year from AniList in one query (up to `max_per_year`
+results, paginated 50 per page) and splits the results by season internally.
+This reduces API round-trips by ~50% and speeds up backfills considerably.
 
 ### `blacklist`
 
@@ -110,7 +115,7 @@ prefix — useful for Docker, CI/CD, or when no config file is present.
 |---|---|---|
 | `ALG_ANILIST_YEARS` | `anilist.years` | current year |
 | `ALG_ANILIST_SEASONS` | `anilist.seasons` | `all` |
-| `ALG_ANILIST_MAX_PER_SEASON` | `anilist.max_per_season` | `100` |
+| `ALG_ANILIST_MAX_PER_YEAR` | `anilist.max_per_year` | `400` |
 | `ALG_ANILIST_INCLUDE_ONA` | `anilist.include_ona` | `false` |
 | `ALG_ANILIST_WINTER_OVERFLOW` | `anilist.winter_overflow` | `true` |
 | `ALG_ANILIST_EXCLUDE_TAGS` | `anilist.exclude_tags` | `""` |

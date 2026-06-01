@@ -27,6 +27,12 @@ jobs:
         run: |
           if [ -n "${{ github.event.inputs.years }}" ]; then
             echo "ALG_ANILIST_YEARS=${{ github.event.inputs.years }}" >> $GITHUB_ENV
+          else
+            # Default to current year; append next year so winter-<next>.json
+            # is always pre-warmed for the season grid.
+            this_year=$(date +%Y)
+            next_year=$(( this_year + 1 ))
+            echo "ALG_ANILIST_YEARS=$this_year,$next_year" >> $GITHUB_ENV
           fi
 
       - name: Collect existing years from gh-pages

@@ -13,8 +13,8 @@ func TestFillDefaults(t *testing.T) {
 	cfg := &Config{}
 	cfg.FillDefaults()
 
-	if cfg.AniList.MaxPerSeason != DefaultMaxPerSeason {
-		t.Errorf("expected MaxPerSeason %d, got %d", DefaultMaxPerSeason, cfg.AniList.MaxPerSeason)
+	if cfg.AniList.MaxPerYear != DefaultMaxPerYear {
+		t.Errorf("expected MaxPerYear %d, got %d", DefaultMaxPerYear, cfg.AniList.MaxPerYear)
 	}
 	if cfg.AniList.AheadMonthsOrDefault() != 3 {
 		t.Errorf("expected AheadMonths 3, got %d", cfg.AniList.AheadMonthsOrDefault())
@@ -39,7 +39,7 @@ func TestFillDefaults_PreservesSetValues(t *testing.T) {
 	v := 6
 	cfg := &Config{
 		AniList: AniListConfig{
-			MaxPerSeason: 50,
+			MaxPerYear: 50,
 			AheadMonths:   &v,
 		},
 		OutputDir:  "/custom/output",
@@ -47,8 +47,8 @@ func TestFillDefaults_PreservesSetValues(t *testing.T) {
 	}
 	cfg.FillDefaults()
 
-	if cfg.AniList.MaxPerSeason != 50 {
-		t.Errorf("expected MaxPerSeason 50, got %d", cfg.AniList.MaxPerSeason)
+	if cfg.AniList.MaxPerYear != 50 {
+		t.Errorf("expected MaxPerYear 50, got %d", cfg.AniList.MaxPerYear)
 	}
 	if cfg.AniList.AheadMonthsOrDefault() != 6 {
 		t.Errorf("expected AheadMonths 6, got %d", cfg.AniList.AheadMonthsOrDefault())
@@ -67,7 +67,7 @@ func TestValidate_Valid(t *testing.T) {
 	cfg := &Config{
 		AniList: AniListConfig{
 			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
+			MaxPerYear: 100,
 		},
 		Logging: LoggingConfig{Level: "info"},
 	}
@@ -83,7 +83,7 @@ func TestValidate_YearOutOfRange(t *testing.T) {
 	cfg := &Config{
 		AniList: AniListConfig{
 			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
+			MaxPerYear: 100,
 			Years:        []int{1999},
 		},
 	}
@@ -92,7 +92,7 @@ func TestValidate_YearOutOfRange(t *testing.T) {
 	}
 }
 
-func TestValidate_MaxPerSeasonRange(t *testing.T) {
+func TestValidate_MaxPerYearRange(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -100,18 +100,18 @@ func TestValidate_MaxPerSeasonRange(t *testing.T) {
 		val  int
 	}{
 		{"too low", 0},
-		{"too high", 501},
+		{"too high", 2001},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{
 				AniList: AniListConfig{
-					Seasons:      []string{"winter"},
-					MaxPerSeason: tc.val,
+					Seasons:    []string{"winter"},
+					MaxPerYear: tc.val,
 				},
 			}
 			if err := cfg.Validate(); err == nil {
-				t.Errorf("expected error for MaxPerSeason=%d", tc.val)
+				t.Errorf("expected error for MaxPerYear=%d", tc.val)
 			}
 		})
 	}
@@ -122,8 +122,8 @@ func TestValidate_NoSeasons(t *testing.T) {
 
 	cfg := &Config{
 		AniList: AniListConfig{
-			Seasons:      []string{"invalid-season"},
-			MaxPerSeason: 100,
+			Seasons:    []string{"invalid-season"},
+			MaxPerYear: 100,
 		},
 	}
 	if err := cfg.Validate(); err == nil {
@@ -137,7 +137,7 @@ func TestValidate_InvalidLogLevel(t *testing.T) {
 	cfg := &Config{
 		AniList: AniListConfig{
 			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
+			MaxPerYear: 100,
 		},
 		Logging: LoggingConfig{Level: "trace"},
 	}
@@ -152,7 +152,7 @@ func TestValidate_EmptyLogLevelIsValid(t *testing.T) {
 	cfg := &Config{
 		AniList: AniListConfig{
 			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
+			MaxPerYear: 100,
 		},
 		Logging: LoggingConfig{Level: ""},
 	}
@@ -271,14 +271,14 @@ func TestApplyEnvOverrides_Seasons(t *testing.T) {
 	}
 }
 
-func TestApplyEnvOverrides_MaxPerSeason(t *testing.T) {
+func TestApplyEnvOverrides_MaxPerYear(t *testing.T) {
 	cfg := &Config{}
-	os.Setenv("ALG_ANILIST_MAX_PER_SEASON", "250")
-	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_MAX_PER_SEASON") })
+	os.Setenv("ALG_ANILIST_MAX_PER_YEAR", "500")
+	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_MAX_PER_YEAR") })
 
 	cfg.applyEnvOverrides()
-	if cfg.AniList.MaxPerSeason != 250 {
-		t.Errorf("expected 250, got %d", cfg.AniList.MaxPerSeason)
+	if cfg.AniList.MaxPerYear != 500 {
+		t.Errorf("expected 500, got %d", cfg.AniList.MaxPerYear)
 	}
 }
 
@@ -435,8 +435,8 @@ func TestDefaultConfig(t *testing.T) {
 
 	cfg := DefaultConfig()
 
-	if cfg.AniList.MaxPerSeason != DefaultMaxPerSeason {
-		t.Errorf("expected MaxPerSeason %d, got %d", DefaultMaxPerSeason, cfg.AniList.MaxPerSeason)
+	if cfg.AniList.MaxPerYear != DefaultMaxPerYear {
+		t.Errorf("expected MaxPerYear %d, got %d", DefaultMaxPerYear, cfg.AniList.MaxPerYear)
 	}
 	if cfg.AniList.IncludeONA {
 		t.Error("expected IncludeONA to be false")

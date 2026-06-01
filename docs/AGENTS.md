@@ -50,5 +50,5 @@ startup.
 
 ## Stats
 
-- Sync time: ~10–15s (4 AniList API calls for all seasons)
+- Sync time: ~5–8s (1–2 AniList API calls per year, ~8 pages)
 - Community mapping: ~5,241 entries (~78% coverage)

@@ -278,6 +278,63 @@ func TestIsWinterStart(t *testing.T) {
 	})
 }
 
+func TestSeasonCode(t *testing.T) {
+	t.Parallel()
+
+	t.Run("nil season", func(t *testing.T) {
+		s := Show{Season: nil}
+		if got := s.SeasonCode(); got != "UNKNOWN" {
+			t.Errorf("SeasonCode() = %q, want UNKNOWN", got)
+		}
+	})
+
+	t.Run("winter uppercase", func(t *testing.T) {
+		s := Show{Season: makePtr("WINTER")}
+		if got := s.SeasonCode(); got != "WINTER" {
+			t.Errorf("SeasonCode() = %q, want WINTER", got)
+		}
+	})
+
+	t.Run("spring lowercase", func(t *testing.T) {
+		s := Show{Season: makePtr("spring")}
+		if got := s.SeasonCode(); got != "SPRING" {
+			t.Errorf("SeasonCode() = %q, want SPRING", got)
+		}
+	})
+
+	t.Run("unknown value preserved", func(t *testing.T) {
+		s := Show{Season: makePtr("custom")}
+		if got := s.SeasonCode(); got != "CUSTOM" {
+			t.Errorf("SeasonCode() = %q, want CUSTOM", got)
+		}
+	})
+}
+
+func TestIsDecemberStart(t *testing.T) {
+	t.Parallel()
+
+	t.Run("december", func(t *testing.T) {
+		s := Show{StartDate: FuzzyDate{Month: makePtr(12)}}
+		if !s.IsDecemberStart() {
+			t.Error("expected true for December")
+		}
+	})
+
+	t.Run("january", func(t *testing.T) {
+		s := Show{StartDate: FuzzyDate{Month: makePtr(1)}}
+		if s.IsDecemberStart() {
+			t.Error("expected false for January")
+		}
+	})
+
+	t.Run("nil month", func(t *testing.T) {
+		s := Show{StartDate: FuzzyDate{Month: nil}}
+		if s.IsDecemberStart() {
+			t.Error("expected false for nil month")
+		}
+	})
+}
+
 func makePtr[T any](v T) *T {
 	return &v
 }

@@ -134,7 +134,7 @@ func runValidate(configPath string, verbose bool) error {
 	fmt.Printf("Config: %s\n", cfgPath)
 	fmt.Printf("  Years: %v\n", cfg.AniList.YearsOrDefault())
 	fmt.Printf("  Seasons: %s\n", cfg.AniList.Season())
-	fmt.Printf("  Max per season: %d\n", cfg.AniList.MaxPerSeason)
+	fmt.Printf("  Max per year: %d\n", cfg.AniList.MaxPerYear)
 	fmt.Printf("  Include ONA: %t\n", cfg.AniList.IncludeONA)
 	fmt.Printf("  Output dir: %s\n", cfg.OutputDir)
 	fmt.Printf("  Log level: %s\n", cfg.Logging.Level)
@@ -215,7 +215,7 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 			ExcludeTags: cfg.AniList.ExcludeTags,
 		},
 		WinterOverflow: cfg.AniList.WinterOverflow,
-		MaxPerSeason:   cfg.AniList.MaxPerSeason,
+		MaxPerYear:     cfg.AniList.MaxPerYear,
 		AheadMonths:    cfg.AniList.AheadMonthsOrDefault(),
 		Formats:        formats,
 	}
@@ -223,9 +223,6 @@ func runGenerate(configPath string, dryRun bool, outputDir string, verbose bool)
 	seriesAll, seriesNew, stats, errs := pipeline.Run(ctx, deps, cfg.AniList.YearsOrDefault(), cfg.AniList.Season())
 
 	expectedSeasons := len(cfg.AniList.YearsOrDefault()) * len(cfg.AniList.Season())
-	if len(cfg.AniList.Season()) == 4 && len(cfg.AniList.YearsOrDefault()) > 0 {
-		expectedSeasons++
-	}
 
 	if dryRun {
 		printDryRun(seriesAll, "series")
@@ -274,6 +271,37 @@ func printDryRun(data map[model.SeasonKey][]output.Show, label string) {
 			fmt.Printf("  TVDB %d — %s\n", s.TVDBID, s.Title)
 		}
 	}
+}
+
+func groupBySeason(shows []model.Show) map[string][]model.Show {
+	m := map[string][]model.Show{
+		"WINTER":  {},
+		"SPRING":  {},
+		"SUMMER":  {},
+		"FALL":    {},
+		"UNKNOWN": {},
+	}
+	for _, sh := range shows {
+		code := sh.SeasonCode()
+		m[code] = append(m[code], sh)
+	}
+	return m
+}
+
+func filterDecember(allShows *[]model.Show, prior []model.Show) int {
+	seen := make(map[int]bool, len(*allShows))
+	for _, sh := range *allShows {
+		seen[sh.ID] = true
+	}
+	var added int
+	for _, sh := range prior {
+		if sh.IsDecemberStart() && !seen[sh.ID] {
+			*allShows = append(*allShows, sh)
+			seen[sh.ID] = true
+			added++
+		}
+	}
+	return added
 }
 
 func setupLogging(cfg *config.Config, verbose bool) (func(), error) {

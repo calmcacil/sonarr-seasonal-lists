@@ -14,19 +14,23 @@ internal/logging/            — slog setup
 
 ## Pipeline
 
-For each configured season and year:
+For each configured year:
 
 ```
 AniList API
     │
     ▼
-  Fetch — paginated GraphQL query (max 50 per page, follows hasNextPage)
+  Fetch year — paginated GraphQL query (no season filter, max 50 per page)
     │
     ▼
-  Winter overflow — if WINTER season, also fetch prior year's WINTER
-    │                 and merge December-premiering shows
+  Bucket by season — split results by AniList's `season` field
+    │                 (WINTER / SPRING / SUMMER / FALL)
+    │
     ▼
-  Filter — remove shows with:
+  Winter overflow — if WINTER in seasons, merge December-premiering
+    │                 shows from the prior year (fetched if not in config)
+    ▼
+  Filter — for each season, remove shows with:
     │         • Duration ≤ 10 min per episode
     │         • Blacklisted MAL ID or title
     │         • Excluded content tag
@@ -65,9 +69,9 @@ AniList tags WINTER shows by **calendar year**. A show that premieres in
 December 2025 is tagged as WINTER 2025 — not WINTER 2026 — even though
 it's only a few weeks before the January premieres.
 
-With `winter_overflow: true`, the tool fetches the prior year's WINTER
-season and merges any shows with a December start date that aren't already
-in the current year's results.
+With `winter_overflow: true`, the tool fetches the prior year (if not
+already configured) and merges any shows with a December start date into
+the current year's WINTER bucket.
 
 | Config | WINTER 2026 includes |
 |---|---|
@@ -98,8 +102,16 @@ cosmetic.
 - **Weekly sync** — AniList seasonal data doesn't change daily. Weekly is
   sufficient and stays well within AniList's rate limits.
 
+- **Year-level fetching** — Instead of one API call per season, the tool
+  fetches the full year in a single query and splits internally. This
+  reduces API round-trips by ~50% and speeds up multi-year backfills.
+
+- **Bucket by season** — AniList returns a `season` field on each show.
+  The tool groups by it client-side, then applies the WINTER start-month
+  filter (December–March) to the WINTER bucket, matching the prior behavior.
+
 - **Paginated fetching** — AniList caps responses at 50 per page. The
-  client follows `hasNextPage` to collect up to `max_per_season` results.
+  client follows `hasNextPage` to collect up to `max_per_year` results.
 
 - **Auto-downloaded mapping** — The community mapping file downloads on
   first run and caches locally. No manual setup needed.

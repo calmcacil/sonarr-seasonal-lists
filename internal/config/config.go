@@ -25,7 +25,7 @@ type Config struct {
 type AniListConfig struct {
 	Years          []int    `yaml:"years"`
 	Seasons        []string `yaml:"seasons"`
-	MaxPerSeason   int      `yaml:"max_per_season"`
+	MaxPerYear     int      `yaml:"max_per_year"`
 	IncludeONA     bool     `yaml:"include_ona"`
 	WinterOverflow bool     `yaml:"winter_overflow"`
 	AheadMonths    *int     `yaml:"ahead_months"`
@@ -39,9 +39,9 @@ type LoggingConfig struct {
 }
 
 const (
-	DefaultMaxPerSeason = 100
-	DefaultMappingPath  = "/tmp/anilistgen_tvdb.yaml"
-	DefaultBaseURL      = "https://lists.calmcacil.dev"
+	DefaultMaxPerYear  = 400
+	DefaultMappingPath = "/tmp/anilistgen_tvdb.yaml"
+	DefaultBaseURL     = "https://lists.calmcacil.dev"
 )
 
 // Season resolves the configured season strings to uppercase season codes.
@@ -96,8 +96,8 @@ func (a *AniListConfig) AheadMonthsOrDefault() int {
 }
 
 func (c *Config) FillDefaults() {
-	if c.AniList.MaxPerSeason <= 0 {
-		c.AniList.MaxPerSeason = DefaultMaxPerSeason
+	if c.AniList.MaxPerYear <= 0 {
+		c.AniList.MaxPerYear = DefaultMaxPerYear
 	}
 	if c.AniList.AheadMonths == nil {
 		v := 3
@@ -130,8 +130,8 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	if c.AniList.MaxPerSeason < 1 || c.AniList.MaxPerSeason > 500 {
-		errs = append(errs, fmt.Sprintf("anilist.max_per_season %d must be between 1 and 500", c.AniList.MaxPerSeason))
+	if c.AniList.MaxPerYear < 1 || c.AniList.MaxPerYear > 2000 {
+		errs = append(errs, fmt.Sprintf("anilist.max_per_year %d must be between 1 and 2000", c.AniList.MaxPerYear))
 	}
 
 	seasons := c.AniList.Season()
@@ -159,7 +159,7 @@ func DefaultConfig() *Config {
 		AniList: AniListConfig{
 			Years:          nil,
 			Seasons:        []string{"all"},
-			MaxPerSeason:   DefaultMaxPerSeason,
+			MaxPerYear:     DefaultMaxPerYear,
 			IncludeONA:     false,
 			WinterOverflow: true,
 			AheadMonths:    &v,
@@ -203,9 +203,9 @@ func (c *Config) applyEnvOverrides() {
 		c.AniList.Seasons = parts
 	}
 
-	if v := os.Getenv(envPrefix + "ANILIST_MAX_PER_SEASON"); v != "" {
+	if v := os.Getenv(envPrefix + "ANILIST_MAX_PER_YEAR"); v != "" {
 		if max, err := strconv.Atoi(v); err == nil && max > 0 {
-			c.AniList.MaxPerSeason = max
+			c.AniList.MaxPerYear = max
 		}
 	}
 
@@ -380,8 +380,8 @@ anilist:
   seasons:
     - all
 
-  # Maximum results per season. Default: 100
-  max_per_season: 100
+  # Maximum results per year (applied before internal season splitting). Default: 400
+  max_per_year: 400
 
   # Include ONA format alongside TV. Default: false
   include_ona: false
