@@ -123,21 +123,8 @@ func Process(ctx context.Context, deps Deps, season string, year int) Result {
 }
 
 func resolveShows(resolver *mapping.Resolver, shows []model.Show) ([]output.Show, Stats) {
-	rs := resolver.ResolveBatch(shows)
-
-	var resolved []output.Show
-	var unmatched int
-	for _, show := range shows {
-		if r, ok := rs[show.ID]; ok && r.Resolved {
-			resolved = append(resolved, output.Show{
-				TVDBID: r.TVDBID,
-				Title:  r.Title,
-			})
-		} else {
-			unmatched++
-		}
-	}
-
+	resolved := resolver.Project(shows)
+	unmatched := len(shows) - len(resolved)
 	return resolved, Stats{Resolved: len(resolved), Unmatched: unmatched, Fetched: len(shows)}
 }
 
@@ -214,20 +201,8 @@ func splitSeriesNew(shows []model.Show) (series, seasonNew []model.Show) {
 func ProcessBatch(resolver *mapping.Resolver, all map[model.SeasonKey][]model.Show, dryRun bool) map[model.SeasonKey][]output.Show {
 	out := map[model.SeasonKey][]output.Show{}
 	for key, shows := range all {
-		rs := resolver.ResolveBatch(shows)
-
-		var resolved []output.Show
-		var unmatched int
-		for _, show := range shows {
-			if r, ok := rs[show.ID]; ok && r.Resolved {
-				resolved = append(resolved, output.Show{
-					TVDBID: r.TVDBID,
-					Title:  r.Title,
-				})
-			} else {
-				unmatched++
-			}
-		}
+		resolved := resolver.Project(shows)
+		unmatched := len(shows) - len(resolved)
 
 		if dryRun {
 			fmt.Printf("\n[%s %d] %d shows (%d resolved, %d unmatched)\n",

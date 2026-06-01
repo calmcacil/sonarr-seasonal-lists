@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/calmcacil/anilistgen/internal/model"
 )
 
 func TestLookup(t *testing.T) {
@@ -105,7 +107,7 @@ func TestLoadCommunityMapping_MissingFile(t *testing.T) {
 	}
 }
 
-func TestNewResolverAndResolve(t *testing.T) {
+func TestNewResolverAndProject(t *testing.T) {
 	t.Parallel()
 
 	cm := &CommunityMapping{
@@ -118,27 +120,43 @@ func TestNewResolverAndResolve(t *testing.T) {
 		t.Fatal("expected non-nil Resolver")
 	}
 
-	t.Run("resolve known", func(t *testing.T) {
-		tvdbID, ok := r.Resolve(16498, "Test Show")
-		if !ok {
-			t.Error("expected ok")
+	t.Run("project known", func(t *testing.T) {
+		shows := []model.Show{
+			{ID: 1, IDMal: makePtr(16498), Title: model.Title{English: makePtr("Test Show")}},
 		}
-		if tvdbID != 12345 {
-			t.Errorf("expected 12345, got %d", tvdbID)
+		result := r.Project(shows)
+		if len(result) != 1 {
+			t.Fatalf("expected 1 show, got %d", len(result))
+		}
+		if result[0].TVDBID != 12345 {
+			t.Errorf("expected 12345, got %d", result[0].TVDBID)
+		}
+		if result[0].Title != "Test Show" {
+			t.Errorf("expected 'Test Show', got %q", result[0].Title)
 		}
 	})
 
-	t.Run("resolve zero MAL", func(t *testing.T) {
-		_, ok := r.Resolve(0, "No MAL")
-		if ok {
-			t.Error("expected !ok for zero MAL ID")
+	t.Run("project zero MAL", func(t *testing.T) {
+		shows := []model.Show{
+			{ID: 1, IDMal: nil, Title: model.Title{English: makePtr("No MAL")}},
+		}
+		result := r.Project(shows)
+		if len(result) != 0 {
+			t.Errorf("expected 0 shows for nil MAL, got %d", len(result))
 		}
 	})
 
-	t.Run("resolve unknown", func(t *testing.T) {
-		_, ok := r.Resolve(1, "Unknown")
-		if ok {
-			t.Error("expected !ok for unknown MAL ID")
+	t.Run("project unknown", func(t *testing.T) {
+		shows := []model.Show{
+			{ID: 1, IDMal: makePtr(1), Title: model.Title{English: makePtr("Unknown")}},
+		}
+		result := r.Project(shows)
+		if len(result) != 0 {
+			t.Errorf("expected 0 shows for unknown MAL, got %d", len(result))
 		}
 	})
+}
+
+func makePtr[T any](v T) *T {
+	return &v
 }
