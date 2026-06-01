@@ -1,41 +1,75 @@
 # Seasonal Anime Lists for Sonarr (UNOFFICIAL AniList)
 
-![Last updated](https://img.shields.io/github/last-commit/calmcacil/sonarr-seasonal-lists/gh-pages?label=last%20updated&color=blue)
+Sonarr-compatible seasonal anime lists from AniList, served as a Docker container
+with a built-in HTTP server and SQLite cache.
 
-Sonarr-compatible seasonal anime lists from AniList.
+## Quick start
 
-Replace `2026` with any available year. Add the URL to
-Sonarr → Settings → Import Lists → Add → Custom List.
+```bash
+docker compose up -d
+```
 
-| URL | What it includes |
-|---|---|
-| `https://lists.calmcacil.dev/2026/winter-series.json` | TV shows airing Winter 2026 |
-| `https://lists.calmcacil.dev/2026/spring-series.json` | TV shows airing Spring 2026 |
-| `https://lists.calmcacil.dev/2026/summer-series.json` | TV shows airing Summer 2026 |
-| `https://lists.calmcacil.dev/2026/fall-series.json` | TV shows airing Fall 2026 |
-| `https://lists.calmcacil.dev/2026/winter-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/spring-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/summer-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/fall-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/winter-movies.json` | Movies, OVAs, specials airing Winter 2026 |
-| `https://lists.calmcacil.dev/2026/movies.json` | All movies, OVAs, specials for 2026 |
-| `https://lists.calmcacil.dev/2026/series.json` | All TV shows for all of 2026 |
-| `https://lists.calmcacil.dev/2026/series-new.json` | New TV shows for all of 2026 |
+Point Sonarr at `http://localhost:8080/list?season=all&year=2026`.
 
----
+## Usage
+
+Add a **Custom List** in Sonarr:
+```
+http://<host>:8080/list?season=all&year=2026
+```
+
+### Query parameters
+
+| Param | Values | Default |
+|-------|--------|---------|
+| `season` | `WINTER`, `SPRING`, `SUMMER`, `FALL`, `all` | `all` |
+| `year` | any year | current year |
+| `category` | `series`, `series-new` | `series` |
+
+The first request for a season/year returns an empty list and triggers an async
+backfill. Subsequent requests return populated data.
+
+## Configuration
+
+All via environment variables:
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `PORT` | `8080` | HTTP listen port |
+| `PREWARM_YEARS` | current year | CSV years to fetch at startup |
+| `PREWARM_SEASONS` | `all` | CSV seasons: `winter,spring,summer,fall` |
+| `MAX_PER_SEASON` | `100` | Max shows per season |
+| `INCLUDE_ONA` | `false` | Include ONA format |
+| `CACHE_DB_PATH` | `/data/cache.db` | SQLite file path |
+| `CACHE_STALE_DAYS` | `14` | Evict entries not hit in N days |
+| `REFRESH_CURRENT_DAYS` | `7` | Refresh interval, current year |
+| `REFRESH_PAST_DAYS` | `30` | Refresh interval, past years |
+| `ALG_ANILIST_TIMEOUT_MINUTES` | `10` | API timeout |
+| `ALG_ANILIST_INCLUDE_ONA` | `false` | Include ONA |
+| `ALG_ANILIST_WINTER_OVERFLOW` | `true` | Merge December premieres |
+| `ALG_ANILIST_EXCLUDE_TAGS` | — | Comma-separated tags to exclude |
+| `LOG_LEVEL` | `info` | debug/info/warn/error |
+
+## How it works
+
+1. Sonarr hits `/list` → checks SQLite cache
+2. Cache miss → returns `[]`, triggers async backfill from AniList
+3. Cache hit → returns cached JSON array of `[{"tvdbId":...,"title":"..."}]`
+4. Background scheduler refreshes stale entries (weekly for current year, monthly for past)
+5. Entries not requested in `CACHE_STALE_DAYS` are pruned
+
+## Building
+
+```bash
+go build ./cmd/server
+```
+
+Multi-arch Docker image published to `ghcr.io` via GitHub Actions on push to main
+or tag.
 
 ## Licenses
 
 | Document | Contents |
 |---|---|
-| [LICENSE](./LICENSE) | MIT License for this project |
-| [NOTICE](./NOTICE) | Third-party attribution notices |
-| [docs/THIRD_PARTY.md](./docs/THIRD_PARTY.md) | Full third-party license details |
-
-## Further reading
-
-| Document | Contents |
-|---|---|
-| [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) | Config reference and environment variables |
-| [docs/SELFHOSTING.md](./docs/SELFHOSTING.md) | Run locally, fork on GitHub, or host yourself |
-| [docs/EXPLANATION.md](./docs/EXPLANATION.md) | Architecture, pipeline, and data sources |
+| [LICENSE](./LICENSE) | MIT License |
+| [NOTICE](./NOTICE) | Third-party attribution |

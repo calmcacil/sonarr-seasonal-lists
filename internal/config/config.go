@@ -1,63 +1,58 @@
 package config
 
 import (
-	"fmt"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
-
-	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	AniList              AniListConfig  `yaml:"anilist"`
-	Blacklist            []string       `yaml:"blacklist"`
-	OutputDir            string         `yaml:"output_dir"`
-	BaseURL              string         `yaml:"base_url"`
-	CommunityMappingPath string         `yaml:"community_mapping_path"`
-	Logging              LoggingConfig  `yaml:"logging"`
-	IndexYears           []int          `yaml:"index_years"`
-}
-
-type AniListConfig struct {
-	Years          []int    `yaml:"years"`
-	Seasons        []string `yaml:"seasons"`
-	MaxPerSeason   int      `yaml:"max_per_season"`
-	IncludeONA     bool     `yaml:"include_ona"`
-	WinterOverflow bool     `yaml:"winter_overflow"`
-	AheadMonths    *int     `yaml:"ahead_months"`
-	ExcludeTags    []string `yaml:"exclude_tags"`
-	TimeoutMinutes int      `yaml:"timeout_minutes"`
-}
-
-type LoggingConfig struct {
-	Level string `yaml:"level"`
-	File  string `yaml:"file"`
+	Port               int
+	PrewarmYears       []int
+	PrewarmSeasons     []string
+	MaxPerSeason       int
+	IncludeONA         bool
+	WinterOverflow     bool
+	AheadMonths        *int
+	ExcludeTags        []string
+	CacheDBPath        string
+	CacheStaleDays     int
+	RefreshCurrentDays int
+	RefreshPastDays    int
+	AniListTimeoutMin  int
+	LogLevel           string
 }
 
 const (
-	DefaultMaxPerSeason = 100
-	DefaultMappingPath  = "/tmp/anilistgen_tvdb.yaml"
-	DefaultBaseURL      = "https://lists.calmcacil.dev"
+	DefaultPort               = 8080
+	DefaultMaxPerSeason       = 100
+	DefaultCacheDBPath        = "/data/cache.db"
+	DefaultCacheStaleDays     = 14
+	DefaultRefreshCurrentDays = 7
+	DefaultRefreshPastDays    = 30
+	DefaultAniListTimeoutMin  = 10
 )
 
-// Season resolves the configured season strings to uppercase season codes.
-// If seasons are empty or contains "all" (case-insensitive), returns all four
-// seasons. Duplicates are removed.
-func (a *AniListConfig) Season() []string {
-	if len(a.Seasons) == 0 {
+// AllSeasons returns the four standard anime seasons.
+func AllSeasons() []string {
+	return []string{"WINTER", "SPRING", "SUMMER", "FALL"}
+}
+
+// ResolveSeasons normalizes season strings to uppercase AniList season codes.
+// Returns all four seasons if input is empty or contains "all".
+func ResolveSeasons(raw []string) []string {
+	if len(raw) == 0 {
 		return AllSeasons()
 	}
-	seen := make(map[string]bool, len(a.Seasons))
-	seasons := make([]string, 0, len(a.Seasons))
-	for _, s := range a.Seasons {
+	seen := make(map[string]bool, len(raw))
+	var out []string
+	for _, s := range raw {
 		if strings.EqualFold(s, "all") {
 			return AllSeasons()
 		}
 		var season string
-		switch strings.ToLower(s) {
+		switch strings.ToLower(strings.TrimSpace(s)) {
 		case "winter":
 			season = "WINTER"
 		case "spring":
@@ -69,374 +64,116 @@ func (a *AniListConfig) Season() []string {
 		}
 		if season != "" && !seen[season] {
 			seen[season] = true
-			seasons = append(seasons, season)
+			out = append(out, season)
 		}
 	}
-	return seasons
+	return out
 }
 
-// AllSeasons returns the four standard anime seasons in uppercase.
-func AllSeasons() []string {
-	return []string{"WINTER", "SPRING", "SUMMER", "FALL"}
-}
-
-func (a *AniListConfig) YearsOrDefault() []int {
-	if len(a.Years) > 0 {
-		return a.Years
-	}
-	return []int{time.Now().Year()}
-}
-
-func (a *AniListConfig) AheadMonthsOrDefault() int {
-	if a.AheadMonths != nil {
-		return *a.AheadMonths
+// AheadMonthsOrDefault returns the ahead_months value, defaulting to 3.
+func (c *Config) AheadMonthsOrDefault() int {
+	if c.AheadMonths != nil {
+		return *c.AheadMonths
 	}
 	return 3
 }
 
-func (c *Config) FillDefaults() {
-	if c.AniList.MaxPerSeason <= 0 {
-		c.AniList.MaxPerSeason = DefaultMaxPerSeason
+// Load reads configuration from environment variables.
+func Load() *Config {
+	cfg := &Config{
+		Port:               getEnvInt("PORT", DefaultPort),
+		MaxPerSeason:       getEnvInt("MAX_PER_SEASON", DefaultMaxPerSeason),
+		IncludeONA:         getEnvBool("ALG_ANILIST_INCLUDE_ONA", false),
+		WinterOverflow:     getEnvBool("ALG_ANILIST_WINTER_OVERFLOW", true),
+		CacheDBPath:        getEnvStr("CACHE_DB_PATH", DefaultCacheDBPath),
+		CacheStaleDays:     getEnvInt("CACHE_STALE_DAYS", DefaultCacheStaleDays),
+		RefreshCurrentDays: getEnvInt("REFRESH_CURRENT_DAYS", DefaultRefreshCurrentDays),
+		RefreshPastDays:    getEnvInt("REFRESH_PAST_DAYS", DefaultRefreshPastDays),
+		AniListTimeoutMin:  getEnvInt("ALG_ANILIST_TIMEOUT_MINUTES", DefaultAniListTimeoutMin),
+		LogLevel:           getEnvStr("LOG_LEVEL", "info"),
 	}
-	if c.AniList.AheadMonths == nil {
-		v := 3
-		c.AniList.AheadMonths = &v
+
+	cfg.PrewarmYears = parseYearList("PREWARM_YEARS", []int{time.Now().Year()})
+	cfg.PrewarmSeasons = ResolveSeasons(parseStringList("PREWARM_SEASONS", []string{"all"}))
+
+	if aheadStr := os.Getenv("AHEAD_MONTHS"); aheadStr != "" {
+		if m, err := strconv.Atoi(aheadStr); err == nil && m >= 0 {
+			cfg.AheadMonths = &m
+		}
 	}
-	if c.AniList.TimeoutMinutes <= 0 {
-		c.AniList.TimeoutMinutes = 10
+	// legacy env var
+	if aheadStr := os.Getenv("ALG_ANILIST_AHEAD_MONTHS"); aheadStr != "" && cfg.AheadMonths == nil {
+		if m, err := strconv.Atoi(aheadStr); err == nil && m >= 0 {
+			cfg.AheadMonths = &m
+		}
 	}
-	if c.OutputDir == "" {
-		c.OutputDir = "./sonarr-lists"
-	}
-	if c.CommunityMappingPath == "" {
-		c.CommunityMappingPath = DefaultMappingPath
-	}
-	if c.BaseURL == "" {
-		c.BaseURL = DefaultBaseURL
-	}
-	if c.Logging.Level == "" {
-		c.Logging.Level = "info"
-	}
+
+	cfg.ExcludeTags = parseStringList("ALG_ANILIST_EXCLUDE_TAGS", nil)
+
+	return cfg
 }
 
-func (c *Config) Validate() error {
-	var errs []string
-
-	years := c.AniList.YearsOrDefault()
-	for _, y := range years {
-		if y < 2000 || y > 2100 {
-			errs = append(errs, fmt.Sprintf("anilist year %d is out of range (2000-2100)", y))
-		}
+func getEnvStr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-
-	if c.AniList.MaxPerSeason < 1 || c.AniList.MaxPerSeason > 500 {
-		errs = append(errs, fmt.Sprintf("anilist.max_per_season %d must be between 1 and 500", c.AniList.MaxPerSeason))
-	}
-
-	seasons := c.AniList.Season()
-	if len(seasons) == 0 {
-		errs = append(errs, "anilist.seasons must specify at least one valid season")
-	}
-
-	switch strings.ToLower(c.Logging.Level) {
-	case "debug", "info", "warn", "error", "":
-	default:
-		errs = append(errs, fmt.Sprintf("logging.level %q is invalid; must be debug, info, warn, or error", c.Logging.Level))
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("config validation failed:\n  - %s", strings.Join(errs, "\n  - "))
-	}
-	return nil
+	return def
 }
 
-// DefaultConfig returns a new Config with sensible defaults: all seasons,
-// current year, winter overflow enabled, 3-month ahead window, and info logging.
-func DefaultConfig() *Config {
-	v := 3
-	return &Config{
-		AniList: AniListConfig{
-			Years:          nil,
-			Seasons:        []string{"all"},
-			MaxPerSeason:   DefaultMaxPerSeason,
-			IncludeONA:     false,
-			WinterOverflow: true,
-			AheadMonths:    &v,
-			TimeoutMinutes: 10,
-		},
-		OutputDir:            "./sonarr-lists",
-		CommunityMappingPath: DefaultMappingPath,
-		BaseURL:              DefaultBaseURL,
-		Logging: LoggingConfig{
-			Level: "info",
-			File:  "",
-		},
+func getEnvInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
 	}
+	return def
 }
 
-const envPrefix = "ALG_"
-
-func (c *Config) applyEnvOverrides() {
-	if v := os.Getenv(envPrefix + "ANILIST_YEARS"); v != "" {
-		parts := strings.Split(v, ",")
-		var years []int
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if y, err := strconv.Atoi(p); err == nil && y > 0 {
-				years = append(years, y)
-			}
-		}
-		if len(years) > 0 {
-			c.AniList.Years = years
-		}
+func getEnvBool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
 	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_SEASONS"); v != "" {
-		parts := strings.Split(v, ",")
-		for i, p := range parts {
-			parts[i] = strings.TrimSpace(p)
-		}
-		c.AniList.Seasons = parts
-	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_MAX_PER_SEASON"); v != "" {
-		if max, err := strconv.Atoi(v); err == nil && max > 0 {
-			c.AniList.MaxPerSeason = max
-		}
-	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_INCLUDE_ONA"); v != "" {
-		c.AniList.IncludeONA = v == "1" || strings.EqualFold(v, "true")
-	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_WINTER_OVERFLOW"); v != "" {
-		c.AniList.WinterOverflow = v == "1" || strings.EqualFold(v, "true")
-	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_EXCLUDE_TAGS"); v != "" {
-		parts := strings.Split(v, ",")
-		for i, p := range parts {
-			parts[i] = strings.TrimSpace(p)
-		}
-		c.AniList.ExcludeTags = parts
-	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_AHEAD_MONTHS"); v != "" {
-		if m, err := strconv.Atoi(v); err == nil && m >= 0 {
-			c.AniList.AheadMonths = &m
-		}
-	}
-
-	if v := os.Getenv(envPrefix + "BLACKLIST"); v != "" {
-		parts := strings.Split(v, ",")
-		for i, p := range parts {
-			parts[i] = strings.TrimSpace(p)
-		}
-		c.Blacklist = parts
-	}
-
-	if v := os.Getenv(envPrefix + "OUTPUT_DIR"); v != "" {
-		c.OutputDir = v
-	}
-
-	if v := os.Getenv(envPrefix + "BASE_URL"); v != "" {
-		c.BaseURL = v
-	}
-
-	if v := os.Getenv(envPrefix + "INDEX_YEARS"); v != "" {
-		parts := strings.Split(v, ",")
-		var years []int
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-			if y, err := strconv.Atoi(p); err == nil && y >= 2010 {
-				years = append(years, y)
-			}
-		}
-		if len(years) > 0 {
-			c.IndexYears = years
-		}
-	}
-
-	if v := os.Getenv(envPrefix + "COMMUNITY_MAPPING_PATH"); v != "" {
-		c.CommunityMappingPath = v
-	}
-
-	if v := os.Getenv(envPrefix + "LOG_LEVEL"); v != "" {
-		c.Logging.Level = v
-	}
-
-	if v := os.Getenv(envPrefix + "LOG_FILE"); v != "" {
-		c.Logging.File = v
-	}
-
-	if v := os.Getenv(envPrefix + "ANILIST_TIMEOUT_MINUTES"); v != "" {
-		if m, err := strconv.Atoi(v); err == nil && m > 0 {
-			c.AniList.TimeoutMinutes = m
-		}
-	}
+	return v == "1" || strings.EqualFold(v, "true")
 }
 
-// Load searches for a config file using the provided path and default search
-// paths. Returns the loaded config, the file path used, or an error. If no file
-// is found, returns a default config with an empty path.
-func Load(path string) (*Config, string, error) {
-	paths := searchPaths(path)
-
-	for _, p := range paths {
-		cfg, err := loadFile(p)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return nil, "", fmt.Errorf("config error in %s: %w", p, err)
-		}
-		cfg.FillDefaults()
-		cfg.applyEnvOverrides()
-		return cfg, p, nil
+func parseStringList(key string, def []string) []string {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
 	}
-
-	cfg := DefaultConfig()
-	cfg.applyEnvOverrides()
-	return cfg, "", nil
-}
-
-func loadFile(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-
-	knownKeys := map[string]bool{
-		"anilist":                true,
-		"blacklist":              true,
-		"output_dir":             true,
-		"base_url":               true,
-		"index_years":            true,
-		"community_mapping_path": true,
-		"logging":                true,
-	}
-	var raw map[string]any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
-	}
-	for k := range raw {
-		if !knownKeys[k] {
-			fmt.Fprintf(os.Stderr, "warning: config file %s contains unknown key %q\n", path, k)
+	parts := strings.Split(v, ",")
+	var out []string
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
 		}
 	}
-
-	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse %s: %w", path, err)
+	if len(out) == 0 {
+		return def
 	}
-
-	return &cfg, nil
+	return out
 }
 
-func xdgConfigHome() string {
-	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
-		return xdg
+func parseYearList(key string, def []int) []int {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
 	}
-	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config")
-}
-
-func searchPaths(cliPath string) []string {
-	if cliPath != "" {
-		return []string{cliPath}
-	}
-	paths := []string{filepath.Join(".", "anilistgen.yaml")}
-	xdg := xdgConfigHome()
-	if xdg != "" {
-		paths = append(paths, filepath.Join(xdg, "anilistgen", "anilistgen.yaml"))
-	}
-	return paths
-}
-
-// WriteDefaultConfig writes a documented default configuration YAML file to
-// the given path, creating directories as needed.
-func WriteDefaultConfig(path string) error {
-	content := `# anilistgen configuration
-
-# AniList query settings
-anilist:
-  # Years to process
-  years:
-    - 2026
-
-  # Seasons to include: winter, spring, summer, fall, or "all"
-  seasons:
-    - all
-
-  # Maximum results per season. Default: 100
-  max_per_season: 100
-
-  # Include ONA format alongside TV. Default: false
-  include_ona: false
-
-  # Merge December-premiering shows from the previous year into WINTER.
-  # When enabled, fetches the prior year's WINTER and merges only
-  # shows that started in December (startDate.month == 12). Default: true
-  winter_overflow: true
-
-  # Skip shows starting more than N months ahead. Default: 3
-  ahead_months: 3
-
-  # Context timeout in minutes. Increase for large backfills. Default: 10
-  timeout_minutes: 10
-
-  # AniList content tags to exclude. Shows with any matching tag
-  # (case-insensitive) are skipped entirely.
-  # exclude_tags:
-  #   - "Hentai"
-
-# Filter
-blacklist: []
-
-# Output directory for JSON files
-output_dir: ./sonarr-lists
-
-# Base URL for the generated index page (used for copy-to-clipboard URLs)
-base_url: https://lists.calmcacil.dev
-
-# Community mapping file path (auto-downloaded if missing)
-community_mapping_path: /tmp/anilistgen_tvdb.yaml
-
-# Logging
-logging:
-  level: info
-  file: ""
-`
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		return fmt.Errorf("create config directory %s: %w", dir, err)
-	}
-
-	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
-		return fmt.Errorf("write config to %s: %w", path, err)
-	}
-
-	return nil
-}
-
-// ResolveConfigPath returns the path to an existing config file, or the
-// default XDG config path if none exists. If cliPath is non-empty, returns it.
-func ResolveConfigPath(cliPath string) string {
-	if cliPath != "" {
-		return cliPath
-	}
-	paths := searchPaths("")
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			return p
+	parts := strings.Split(v, ",")
+	var out []int
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if y, err := strconv.Atoi(p); err == nil && y > 0 {
+			out = append(out, y)
 		}
 	}
-	return filepath.Join(xdgConfigHome(), "anilistgen", "anilistgen.yaml")
+	if len(out) == 0 {
+		return def
+	}
+	return out
 }

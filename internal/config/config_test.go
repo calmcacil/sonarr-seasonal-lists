@@ -2,171 +2,14 @@ package config
 
 import (
 	"os"
-	"path/filepath"
 	"testing"
 	"time"
 )
 
-func TestFillDefaults(t *testing.T) {
+func TestResolveSeasons_All(t *testing.T) {
 	t.Parallel()
 
-	cfg := &Config{}
-	cfg.FillDefaults()
-
-	if cfg.AniList.MaxPerSeason != DefaultMaxPerSeason {
-		t.Errorf("expected MaxPerSeason %d, got %d", DefaultMaxPerSeason, cfg.AniList.MaxPerSeason)
-	}
-	if cfg.AniList.AheadMonthsOrDefault() != 3 {
-		t.Errorf("expected AheadMonths 3, got %d", cfg.AniList.AheadMonthsOrDefault())
-	}
-	if cfg.OutputDir != "./sonarr-lists" {
-		t.Errorf("expected OutputDir './sonarr-lists', got %q", cfg.OutputDir)
-	}
-	if cfg.CommunityMappingPath != DefaultMappingPath {
-		t.Errorf("expected CommunityMappingPath %q, got %q", DefaultMappingPath, cfg.CommunityMappingPath)
-	}
-	if cfg.Logging.Level != "info" {
-		t.Errorf("expected Logging.Level 'info', got %q", cfg.Logging.Level)
-	}
-	if cfg.BaseURL != DefaultBaseURL {
-		t.Errorf("expected BaseURL %q, got %q", DefaultBaseURL, cfg.BaseURL)
-	}
-}
-
-func TestFillDefaults_PreservesSetValues(t *testing.T) {
-	t.Parallel()
-
-	v := 6
-	cfg := &Config{
-		AniList: AniListConfig{
-			MaxPerSeason: 50,
-			AheadMonths:   &v,
-		},
-		OutputDir:  "/custom/output",
-		Logging:    LoggingConfig{Level: "debug"},
-	}
-	cfg.FillDefaults()
-
-	if cfg.AniList.MaxPerSeason != 50 {
-		t.Errorf("expected MaxPerSeason 50, got %d", cfg.AniList.MaxPerSeason)
-	}
-	if cfg.AniList.AheadMonthsOrDefault() != 6 {
-		t.Errorf("expected AheadMonths 6, got %d", cfg.AniList.AheadMonthsOrDefault())
-	}
-	if cfg.OutputDir != "/custom/output" {
-		t.Errorf("expected OutputDir '/custom/output', got %q", cfg.OutputDir)
-	}
-	if cfg.Logging.Level != "debug" {
-		t.Errorf("expected Logging.Level 'debug', got %q", cfg.Logging.Level)
-	}
-}
-
-func TestValidate_Valid(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		AniList: AniListConfig{
-			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
-		},
-		Logging: LoggingConfig{Level: "info"},
-	}
-
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("expected no error, got: %v", err)
-	}
-}
-
-func TestValidate_YearOutOfRange(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		AniList: AniListConfig{
-			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
-			Years:        []int{1999},
-		},
-	}
-	if err := cfg.Validate(); err == nil {
-		t.Error("expected error for out-of-range year")
-	}
-}
-
-func TestValidate_MaxPerSeasonRange(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		val  int
-	}{
-		{"too low", 0},
-		{"too high", 501},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg := &Config{
-				AniList: AniListConfig{
-					Seasons:      []string{"winter"},
-					MaxPerSeason: tc.val,
-				},
-			}
-			if err := cfg.Validate(); err == nil {
-				t.Errorf("expected error for MaxPerSeason=%d", tc.val)
-			}
-		})
-	}
-}
-
-func TestValidate_NoSeasons(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		AniList: AniListConfig{
-			Seasons:      []string{"invalid-season"},
-			MaxPerSeason: 100,
-		},
-	}
-	if err := cfg.Validate(); err == nil {
-		t.Error("expected error for no valid seasons")
-	}
-}
-
-func TestValidate_InvalidLogLevel(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		AniList: AniListConfig{
-			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
-		},
-		Logging: LoggingConfig{Level: "trace"},
-	}
-	if err := cfg.Validate(); err == nil {
-		t.Error("expected error for invalid log level")
-	}
-}
-
-func TestValidate_EmptyLogLevelIsValid(t *testing.T) {
-	t.Parallel()
-
-	cfg := &Config{
-		AniList: AniListConfig{
-			Seasons:      []string{"winter"},
-			MaxPerSeason: 100,
-		},
-		Logging: LoggingConfig{Level: ""},
-	}
-	if err := cfg.Validate(); err != nil {
-		t.Errorf("expected no error for empty log level, got: %v", err)
-	}
-}
-
-func TestSeason_All(t *testing.T) {
-	t.Parallel()
-
-	a := &AniListConfig{Seasons: []string{"all"}}
-	got := a.Season()
-
+	got := ResolveSeasons([]string{"all"})
 	want := []string{"WINTER", "SPRING", "SUMMER", "FALL"}
 	if len(got) != len(want) {
 		t.Fatalf("expected %d seasons, got %d: %v", len(want), len(got), got)
@@ -178,17 +21,16 @@ func TestSeason_All(t *testing.T) {
 	}
 }
 
-func TestSeason_AllCaseInsensitive(t *testing.T) {
+func TestResolveSeasons_AllCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
-	a := &AniListConfig{Seasons: []string{"ALL"}}
-	got := a.Season()
+	got := ResolveSeasons([]string{"ALL"})
 	if len(got) != 4 {
 		t.Errorf("expected 4 seasons for ALL, got %d", len(got))
 	}
 }
 
-func TestSeason_Specific(t *testing.T) {
+func TestResolveSeasons_Specific(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -203,251 +45,188 @@ func TestSeason_Specific(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.input, func(t *testing.T) {
-			a := &AniListConfig{Seasons: []string{tc.input}}
-			got := a.Season()
+			got := ResolveSeasons([]string{tc.input})
 			if len(got) != 1 || got[0] != tc.want {
-				t.Errorf("Season(%q) = %v, want [%q]", tc.input, got, tc.want)
+				t.Errorf("ResolveSeasons(%q) = %v, want [%q]", tc.input, got, tc.want)
 			}
 		})
 	}
 }
 
-func TestSeason_Empty(t *testing.T) {
+func TestResolveSeasons_Empty(t *testing.T) {
 	t.Parallel()
 
-	a := &AniListConfig{Seasons: nil}
-	got := a.Season()
+	got := ResolveSeasons(nil)
 	if len(got) != 4 {
-		t.Errorf("expected 4 seasons for empty, got %d: %v", len(got), got)
+		t.Errorf("expected 4 seasons for nil, got %d: %v", len(got), got)
 	}
 
-	a2 := &AniListConfig{Seasons: []string{}}
-	got2 := a2.Season()
+	got2 := ResolveSeasons([]string{})
 	if len(got2) != 4 {
 		t.Errorf("expected 4 seasons for empty slice, got %d: %v", len(got2), got2)
 	}
 }
 
-func TestYearsOrDefault_YearsSet(t *testing.T) {
+func TestAllSeasons(t *testing.T) {
 	t.Parallel()
 
-	a := &AniListConfig{Years: []int{2024, 2025, 2026}}
-	got := a.YearsOrDefault()
-	if len(got) != 3 || got[0] != 2024 || got[1] != 2025 || got[2] != 2026 {
-		t.Errorf("YearsOrDefault() = %v, want [2024 2025 2026]", got)
+	got := AllSeasons()
+	want := []string{"WINTER", "SPRING", "SUMMER", "FALL"}
+	if len(got) != len(want) {
+		t.Fatalf("expected %d seasons, got %d", len(want), len(got))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("AllSeasons[%d] = %q, want %q", i, got[i], want[i])
+		}
 	}
 }
 
-func TestYearsOrDefault_DefaultsToCurrent(t *testing.T) {
+func TestAheadMonthsOrDefault(t *testing.T) {
 	t.Parallel()
 
-	a := &AniListConfig{}
-	got := a.YearsOrDefault()
-	want := []int{time.Now().Year()}
-	if len(got) != 1 || got[0] != want[0] {
-		t.Errorf("YearsOrDefault() = %v, want %v", got, want)
+	t.Run("nil defaults to 3", func(t *testing.T) {
+		cfg := &Config{}
+		if got := cfg.AheadMonthsOrDefault(); got != 3 {
+			t.Errorf("expected 3, got %d", got)
+		}
+	})
+
+	t.Run("respects set value", func(t *testing.T) {
+		v := 6
+		cfg := &Config{AheadMonths: &v}
+		if got := cfg.AheadMonthsOrDefault(); got != 6 {
+			t.Errorf("expected 6, got %d", got)
+		}
+	})
+}
+
+func TestLoad_Defaults(t *testing.T) {
+	for _, key := range []string{
+		"PORT", "MAX_PER_SEASON", "CACHE_DB_PATH", "CACHE_STALE_DAYS",
+		"REFRESH_CURRENT_DAYS", "REFRESH_PAST_DAYS", "LOG_LEVEL",
+		"PREWARM_YEARS", "PREWARM_SEASONS", "AHEAD_MONTHS",
+		"ALG_ANILIST_AHEAD_MONTHS", "ALG_ANILIST_TIMEOUT_MINUTES",
+		"ALG_ANILIST_INCLUDE_ONA", "ALG_ANILIST_WINTER_OVERFLOW",
+		"ALG_ANILIST_EXCLUDE_TAGS",
+	} {
+		os.Unsetenv(key)
+	}
+
+	cfg := Load()
+
+	if cfg.Port != DefaultPort {
+		t.Errorf("Port = %d, want %d", cfg.Port, DefaultPort)
+	}
+	if cfg.MaxPerSeason != DefaultMaxPerSeason {
+		t.Errorf("MaxPerSeason = %d, want %d", cfg.MaxPerSeason, DefaultMaxPerSeason)
+	}
+	if cfg.CacheDBPath != DefaultCacheDBPath {
+		t.Errorf("CacheDBPath = %q, want %q", cfg.CacheDBPath, DefaultCacheDBPath)
+	}
+	if cfg.CacheStaleDays != DefaultCacheStaleDays {
+		t.Errorf("CacheStaleDays = %d, want %d", cfg.CacheStaleDays, DefaultCacheStaleDays)
+	}
+	if cfg.RefreshCurrentDays != DefaultRefreshCurrentDays {
+		t.Errorf("RefreshCurrentDays = %d, want %d", cfg.RefreshCurrentDays, DefaultRefreshCurrentDays)
+	}
+	if cfg.RefreshPastDays != DefaultRefreshPastDays {
+		t.Errorf("RefreshPastDays = %d, want %d", cfg.RefreshPastDays, DefaultRefreshPastDays)
+	}
+	if cfg.LogLevel != "info" {
+		t.Errorf("LogLevel = %q, want info", cfg.LogLevel)
+	}
+	if len(cfg.PrewarmYears) != 1 || cfg.PrewarmYears[0] != time.Now().Year() {
+		t.Errorf("PrewarmYears = %v, want [%d]", cfg.PrewarmYears, time.Now().Year())
+	}
+	if cfg.AheadMonthsOrDefault() != 3 {
+		t.Errorf("AheadMonths = %d, want 3", cfg.AheadMonthsOrDefault())
 	}
 }
 
-func TestApplyEnvOverrides_AniListYears(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_ANILIST_YEARS", "2025,2026,2027")
-	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_YEARS") })
+func TestLoad_EnvOverrides(t *testing.T) {
+	keys := []string{
+		"PORT", "MAX_PER_SEASON", "CACHE_STALE_DAYS", "REFRESH_CURRENT_DAYS",
+		"REFRESH_PAST_DAYS", "LOG_LEVEL", "PREWARM_YEARS", "PREWARM_SEASONS",
+		"AHEAD_MONTHS",
+	}
+	for _, key := range keys {
+		os.Setenv(key, "")
+		os.Unsetenv(key)
+	}
 
-	cfg.applyEnvOverrides()
-	if len(cfg.AniList.Years) != 3 || cfg.AniList.Years[0] != 2025 || cfg.AniList.Years[2] != 2027 {
-		t.Errorf("expected [2025 2026 2027], got %v", cfg.AniList.Years)
+	os.Setenv("PORT", "9090")
+	os.Setenv("MAX_PER_SEASON", "50")
+	os.Setenv("CACHE_STALE_DAYS", "30")
+	os.Setenv("REFRESH_CURRENT_DAYS", "3")
+	os.Setenv("REFRESH_PAST_DAYS", "60")
+	os.Setenv("LOG_LEVEL", "debug")
+	os.Setenv("PREWARM_YEARS", "2025,2026")
+	os.Setenv("PREWARM_SEASONS", "winter,spring")
+	os.Setenv("AHEAD_MONTHS", "6")
+	t.Cleanup(func() {
+		for _, key := range keys {
+			os.Unsetenv(key)
+		}
+	})
+
+	cfg := Load()
+
+	if cfg.Port != 9090 {
+		t.Errorf("Port = %d, want 9090", cfg.Port)
+	}
+	if cfg.MaxPerSeason != 50 {
+		t.Errorf("MaxPerSeason = %d, want 50", cfg.MaxPerSeason)
+	}
+	if cfg.CacheStaleDays != 30 {
+		t.Errorf("CacheStaleDays = %d, want 30", cfg.CacheStaleDays)
+	}
+	if cfg.RefreshCurrentDays != 3 {
+		t.Errorf("RefreshCurrentDays = %d, want 3", cfg.RefreshCurrentDays)
+	}
+	if cfg.RefreshPastDays != 60 {
+		t.Errorf("RefreshPastDays = %d, want 60", cfg.RefreshPastDays)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("LogLevel = %q, want debug", cfg.LogLevel)
+	}
+	if len(cfg.PrewarmYears) != 2 || cfg.PrewarmYears[0] != 2025 || cfg.PrewarmYears[1] != 2026 {
+		t.Errorf("PrewarmYears = %v, want [2025 2026]", cfg.PrewarmYears)
+	}
+	if len(cfg.PrewarmSeasons) != 2 || cfg.PrewarmSeasons[0] != "WINTER" || cfg.PrewarmSeasons[1] != "SPRING" {
+		t.Errorf("PrewarmSeasons = %v, want [WINTER SPRING]", cfg.PrewarmSeasons)
+	}
+	if cfg.AheadMonthsOrDefault() != 6 {
+		t.Errorf("AheadMonths = %d, want 6", cfg.AheadMonthsOrDefault())
 	}
 }
 
-func TestApplyEnvOverrides_Seasons(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_ANILIST_SEASONS", "spring,fall")
-	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_SEASONS") })
-
-	cfg.applyEnvOverrides()
-	if len(cfg.AniList.Seasons) != 2 || cfg.AniList.Seasons[0] != "spring" || cfg.AniList.Seasons[1] != "fall" {
-		t.Errorf("expected [spring fall], got %v", cfg.AniList.Seasons)
-	}
-}
-
-func TestApplyEnvOverrides_MaxPerSeason(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_ANILIST_MAX_PER_SEASON", "250")
-	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_MAX_PER_SEASON") })
-
-	cfg.applyEnvOverrides()
-	if cfg.AniList.MaxPerSeason != 250 {
-		t.Errorf("expected 250, got %d", cfg.AniList.MaxPerSeason)
-	}
-}
-
-func TestApplyEnvOverrides_IncludeONA(t *testing.T) {
-	t.Run("overrides to true", func(t *testing.T) {
-		cfg := &Config{AniList: AniListConfig{IncludeONA: false}}
+func TestLoad_Booleans(t *testing.T) {
+	t.Run("include_ona true", func(t *testing.T) {
 		os.Setenv("ALG_ANILIST_INCLUDE_ONA", "true")
 		t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_INCLUDE_ONA") })
-		cfg.applyEnvOverrides()
-		if !cfg.AniList.IncludeONA {
-			t.Error("expected IncludeONA to be true")
+		cfg := Load()
+		if !cfg.IncludeONA {
+			t.Error("expected IncludeONA true")
 		}
 	})
-	t.Run("overrides to false", func(t *testing.T) {
-		cfg := &Config{AniList: AniListConfig{IncludeONA: true}}
-		os.Setenv("ALG_ANILIST_INCLUDE_ONA", "false")
-		t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_INCLUDE_ONA") })
-		cfg.applyEnvOverrides()
-		if cfg.AniList.IncludeONA {
-			t.Error("expected IncludeONA to be false")
+
+	t.Run("winter_overflow false", func(t *testing.T) {
+		os.Setenv("ALG_ANILIST_WINTER_OVERFLOW", "false")
+		t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_WINTER_OVERFLOW") })
+		cfg := Load()
+		if cfg.WinterOverflow {
+			t.Error("expected WinterOverflow false")
 		}
 	})
 }
 
-func TestApplyEnvOverrides_WinterOverflow(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_ANILIST_WINTER_OVERFLOW", "1")
-	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_WINTER_OVERFLOW") })
-
-	cfg.applyEnvOverrides()
-	if !cfg.AniList.WinterOverflow {
-		t.Error("expected WinterOverflow to be true")
-	}
-}
-
-func TestApplyEnvOverrides_ExcludeTags(t *testing.T) {
-	cfg := &Config{}
+func TestLoad_ExcludeTags(t *testing.T) {
 	os.Setenv("ALG_ANILIST_EXCLUDE_TAGS", "hentai,guro")
 	t.Cleanup(func() { os.Unsetenv("ALG_ANILIST_EXCLUDE_TAGS") })
 
-	cfg.applyEnvOverrides()
-	if len(cfg.AniList.ExcludeTags) != 2 || cfg.AniList.ExcludeTags[0] != "hentai" {
-		t.Errorf("expected [hentai guro], got %v", cfg.AniList.ExcludeTags)
-	}
-}
-
-func TestApplyEnvOverrides_LogLevel(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_LOG_LEVEL", "debug")
-	t.Cleanup(func() { os.Unsetenv("ALG_LOG_LEVEL") })
-
-	cfg.applyEnvOverrides()
-	if cfg.Logging.Level != "debug" {
-		t.Errorf("expected 'debug', got %q", cfg.Logging.Level)
-	}
-}
-
-func TestApplyEnvOverrides_LogFile(t *testing.T) {
-	cfg := &Config{}
-	os.Setenv("ALG_LOG_FILE", "/tmp/test.log")
-	t.Cleanup(func() { os.Unsetenv("ALG_LOG_FILE") })
-
-	cfg.applyEnvOverrides()
-	if cfg.Logging.File != "/tmp/test.log" {
-		t.Errorf("expected '/tmp/test.log', got %q", cfg.Logging.File)
-	}
-}
-
-func TestSearchPaths_WithCLI(t *testing.T) {
-	paths := searchPaths("/custom/config.yaml")
-	if len(paths) != 1 || paths[0] != "/custom/config.yaml" {
-		t.Errorf("expected [/custom/config.yaml], got %v", paths)
-	}
-}
-
-func TestSearchPaths_WithoutCLI(t *testing.T) {
-	os.Unsetenv("XDG_CONFIG_HOME")
-	t.Cleanup(func() { os.Unsetenv("XDG_CONFIG_HOME") })
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	paths := searchPaths("")
-	if len(paths) != 2 {
-		t.Fatalf("expected 2 paths, got %d: %v", len(paths), paths)
-	}
-	if paths[0] != "anilistgen.yaml" {
-		t.Errorf("paths[0] = %q, want %q", paths[0], "anilistgen.yaml")
-	}
-	wantXDG := filepath.Join(home, ".config", "anilistgen", "anilistgen.yaml")
-	if paths[1] != wantXDG {
-		t.Errorf("paths[1] = %q, want %q", paths[1], wantXDG)
-	}
-}
-
-func TestSearchPaths_WithXDG(t *testing.T) {
-	os.Setenv("XDG_CONFIG_HOME", "/custom/xdg")
-	t.Cleanup(func() { os.Unsetenv("XDG_CONFIG_HOME") })
-
-	paths := searchPaths("")
-	if len(paths) != 2 {
-		t.Fatalf("expected 2 paths, got %d: %v", len(paths), paths)
-	}
-	want := filepath.Join("/custom/xdg", "anilistgen", "anilistgen.yaml")
-	if paths[1] != want {
-		t.Errorf("paths[1] = %q, want %q", paths[1], want)
-	}
-}
-
-func TestLoad_ValidYAML(t *testing.T) {
-	dir := t.TempDir()
-	cfgPath := filepath.Join(dir, "anilistgen.yaml")
-	content := []byte("anilist:\n  years:\n    - 2026\n  seasons:\n    - spring\noutput_dir: /tmp/out\n")
-	if err := os.WriteFile(cfgPath, content, 0644); err != nil {
-		t.Fatal(err)
-	}
-
-	cfg, path, err := Load(cfgPath)
-	if err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
-	if path != cfgPath {
-		t.Errorf("expected path %q, got %q", cfgPath, path)
-	}
-	if len(cfg.AniList.Years) != 1 || cfg.AniList.Years[0] != 2026 {
-		t.Errorf("expected Years [2026], got %v", cfg.AniList.Years)
-	}
-	if cfg.OutputDir != "/tmp/out" {
-		t.Errorf("expected OutputDir '/tmp/out', got %q", cfg.OutputDir)
-	}
-}
-
-func TestLoad_MissingFileFallback(t *testing.T) {
-	_, path, err := Load("/nonexistent/path/config.yaml")
-	if err != nil {
-		t.Fatalf("Load() error: %v", err)
-	}
-	if path != "" {
-		t.Errorf("expected empty path for fallback, got %q", path)
-	}
-}
-
-func TestResolveConfigPath_WithCLI(t *testing.T) {
-	got := ResolveConfigPath("/custom/path.yaml")
-	if got != "/custom/path.yaml" {
-		t.Errorf("expected '/custom/path.yaml', got %q", got)
-	}
-}
-
-func TestDefaultConfig(t *testing.T) {
-	t.Parallel()
-
-	cfg := DefaultConfig()
-
-	if cfg.AniList.MaxPerSeason != DefaultMaxPerSeason {
-		t.Errorf("expected MaxPerSeason %d, got %d", DefaultMaxPerSeason, cfg.AniList.MaxPerSeason)
-	}
-	if cfg.AniList.IncludeONA {
-		t.Error("expected IncludeONA to be false")
-	}
-	if cfg.OutputDir != "./sonarr-lists" {
-		t.Errorf("expected OutputDir %q, got %q", "./sonarr-lists", cfg.OutputDir)
-	}
-	if cfg.Logging.Level != "info" {
-		t.Errorf("expected Logging.Level 'info', got %q", cfg.Logging.Level)
-	}
-	if cfg.BaseURL != DefaultBaseURL {
-		t.Errorf("expected BaseURL %q, got %q", DefaultBaseURL, cfg.BaseURL)
+	cfg := Load()
+	if len(cfg.ExcludeTags) != 2 || cfg.ExcludeTags[0] != "hentai" {
+		t.Errorf("ExcludeTags = %v, want [hentai guro]", cfg.ExcludeTags)
 	}
 }
