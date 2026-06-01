@@ -1,4 +1,4 @@
-package anilist
+package model
 
 import (
 	"testing"

@@ -9,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/calmcacil/anilistgen/internal/model"
 )
 
 //go:embed index.html
@@ -55,23 +57,14 @@ func writeJSON(dir, filename string, shows []Show) error {
 
 // WriteAllJSON writes per-season JSON files, yearly aggregates, and (for the
 // "series" category) an HTML index page with Sonarr setup instructions.
-func WriteAllJSON(outputDir, baseURL, category string, seasonal map[string][]Show, indexYears []int) error {
+func WriteAllJSON(outputDir, baseURL, category string, seasonal map[model.SeasonKey][]Show, indexYears []int) error {
 	byYear := map[int][]Show{}
 
 	for key, shows := range seasonal {
-		parts := strings.SplitN(key, "-", 2)
-		if len(parts) != 2 {
-			continue
+		if err := WriteSeasonJSON(outputDir, category, key.Season, key.Year, shows); err != nil {
+			return fmt.Errorf("write %s: %w", key.String(), err)
 		}
-		season := parts[0]
-		var year int
-		if _, err := fmt.Sscanf(parts[1], "%d", &year); err != nil {
-			continue
-		}
-		if err := WriteSeasonJSON(outputDir, category, season, year, shows); err != nil {
-			return fmt.Errorf("write %s: %w", key, err)
-		}
-		byYear[year] = append(byYear[year], shows...)
+		byYear[key.Year] = append(byYear[key.Year], shows...)
 	}
 
 	for year, shows := range byYear {

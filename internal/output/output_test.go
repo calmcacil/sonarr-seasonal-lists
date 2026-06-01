@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/calmcacil/anilistgen/internal/model"
 )
 
 func TestWriteSeasonJSON(t *testing.T) {
@@ -120,10 +122,10 @@ func TestWriteAllJSON(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	seasonal := map[string][]Show{
-		"WINTER-2026": {{TVDBID: 1, Title: "Winter Show"}},
-		"SPRING-2026": {{TVDBID: 2, Title: "Spring Show"}},
-		"WINTER-2025": {{TVDBID: 3, Title: "Old Show"}},
+	seasonal := map[model.SeasonKey][]Show{
+		{Season: "WINTER", Year: 2026}: {{TVDBID: 1, Title: "Winter Show"}},
+		{Season: "SPRING", Year: 2026}: {{TVDBID: 2, Title: "Spring Show"}},
+		{Season: "WINTER", Year: 2025}: {{TVDBID: 3, Title: "Old Show"}},
 	}
 
 	err := WriteAllJSON(dir, "https://example.com", "series", seasonal, nil)
@@ -181,11 +183,12 @@ func TestWriteAllJSON_MultipleCategories(t *testing.T) {
 	t.Parallel()
 
 	dir := t.TempDir()
-	series := map[string][]Show{
-		"WINTER-2026": {{TVDBID: 1, Title: "Series A"}},
+	winter2026 := model.SeasonKey{Season: "WINTER", Year: 2026}
+	series := map[model.SeasonKey][]Show{
+		winter2026: {{TVDBID: 1, Title: "Series A"}},
 	}
-	movies := map[string][]Show{
-		"WINTER-2026": {{TVDBID: 2, Title: "Movie A"}},
+	movies := map[model.SeasonKey][]Show{
+		winter2026: {{TVDBID: 2, Title: "Movie A"}},
 	}
 
 	if err := WriteAllJSON(dir, "https://example.com", "series", series, nil); err != nil {

@@ -3,7 +3,7 @@ package mapping
 import (
 	"log/slog"
 
-	"github.com/calmcacil/anilistgen/internal/anilist"
+	"github.com/calmcacil/anilistgen/internal/model"
 )
 
 type Resolver struct {
@@ -35,7 +35,7 @@ func (r *Resolver) Resolve(malID int, title string) (int, bool) {
 	return 0, false
 }
 
-func (r *Resolver) ResolveBatch(shows []anilist.Show) map[int]ResolvedShow {
+func (r *Resolver) ResolveBatch(shows []model.Show) map[int]ResolvedShow {
 	result := make(map[int]ResolvedShow, len(shows))
 	for _, show := range shows {
 		malID := 0

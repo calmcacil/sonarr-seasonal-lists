@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/calmcacil/anilistgen/internal/anilist"
+	"github.com/calmcacil/anilistgen/internal/model"
 )
 
 type Config struct {
@@ -15,8 +15,8 @@ type Config struct {
 
 // Filter removes shows with short duration, matching blacklist entries, or
 // excluded content tags. Returns the filtered slice.
-func Filter(shows []anilist.Show, cfg Config) []anilist.Show {
-	var filtered []anilist.Show
+func Filter(shows []model.Show, cfg Config) []model.Show {
+	var filtered []model.Show
 	for _, show := range shows {
 		title := show.DisplayTitle()
 		idMal := 0
@@ -77,7 +77,7 @@ func isBlacklisted(title string, idMal int, blacklist []string) bool {
 	return false
 }
 
-func hasExcludedTag(show anilist.Show, tags []string) bool {
+func hasExcludedTag(show model.Show, tags []string) bool {
 	for _, exclude := range tags {
 		if exclude == "" {
 			continue
@@ -91,11 +91,11 @@ func hasExcludedTag(show anilist.Show, tags []string) bool {
 
 // FilterFuture removes shows whose start date is more than aheadMonths
 // months in the future. Returns the original slice if aheadMonths is <= 0.
-func FilterFuture(shows []anilist.Show, aheadMonths int) []anilist.Show {
+func FilterFuture(shows []model.Show, aheadMonths int) []model.Show {
 	if aheadMonths <= 0 {
 		return shows
 	}
-	var filtered []anilist.Show
+	var filtered []model.Show
 	for _, show := range shows {
 		title := show.DisplayTitle()
 		if !show.IsWithinMonths(aheadMonths) {

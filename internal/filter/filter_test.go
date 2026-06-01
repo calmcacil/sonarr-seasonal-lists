@@ -3,7 +3,7 @@ package filter
 import (
 	"testing"
 
-	"github.com/calmcacil/anilistgen/internal/anilist"
+	"github.com/calmcacil/anilistgen/internal/model"
 )
 
 func makePtr[T any](v T) *T {
@@ -13,7 +13,7 @@ func makePtr[T any](v T) *T {
 func TestFilter_SkipsShortDuration(t *testing.T) {
 	t.Parallel()
 
-	shows := []anilist.Show{
+	shows := []model.Show{
 		{Duration: makePtr(24), Episodes: makePtr(12)},
 		{Duration: makePtr(6), Episodes: makePtr(1)},
 		{Duration: makePtr(10), Episodes: makePtr(1)},
@@ -31,9 +31,9 @@ func TestFilter_SkipsShortDuration(t *testing.T) {
 func TestFilter_BlacklistByMALID(t *testing.T) {
 	t.Parallel()
 
-	shows := []anilist.Show{
-		{IDMal: makePtr(16498), Title: anilist.Title{English: makePtr("Good Show")}},
-		{IDMal: makePtr(99999), Title: anilist.Title{English: makePtr("Bad Show")}},
+	shows := []model.Show{
+		{IDMal: makePtr(16498), Title: model.Title{English: makePtr("Good Show")}},
+		{IDMal: makePtr(99999), Title: model.Title{English: makePtr("Bad Show")}},
 	}
 
 	result := Filter(shows, Config{Blacklist: []string{"99999"}})
@@ -48,9 +48,9 @@ func TestFilter_BlacklistByMALID(t *testing.T) {
 func TestFilter_BlacklistByTitle(t *testing.T) {
 	t.Parallel()
 
-	shows := []anilist.Show{
-		{Title: anilist.Title{English: makePtr("One Piece")}},
-		{Title: anilist.Title{English: makePtr("Naruto")}},
+	shows := []model.Show{
+		{Title: model.Title{English: makePtr("One Piece")}},
+		{Title: model.Title{English: makePtr("Naruto")}},
 	}
 
 	result := Filter(shows, Config{Blacklist: []string{"One Piece"}})
@@ -62,10 +62,10 @@ func TestFilter_BlacklistByTitle(t *testing.T) {
 func TestFilter_ExcludeTags(t *testing.T) {
 	t.Parallel()
 
-	shows := []anilist.Show{
-		{Tags: []anilist.Tag{{Name: "Action"}}},
-		{Tags: []anilist.Tag{{Name: "Hentai"}}},
-		{Tags: []anilist.Tag{{Name: "Comedy"}}},
+	shows := []model.Show{
+		{Tags: []model.Tag{{Name: "Action"}}},
+		{Tags: []model.Tag{{Name: "Hentai"}}},
+		{Tags: []model.Tag{{Name: "Comedy"}}},
 	}
 
 	result := Filter(shows, Config{ExcludeTags: []string{"Hentai"}})
@@ -77,8 +77,8 @@ func TestFilter_ExcludeTags(t *testing.T) {
 func TestFilter_ExcludeTagsCaseInsensitive(t *testing.T) {
 	t.Parallel()
 
-	shows := []anilist.Show{
-		{Tags: []anilist.Tag{{Name: "HENTAI"}}},
+	shows := []model.Show{
+		{Tags: []model.Tag{{Name: "HENTAI"}}},
 	}
 
 	result := Filter(shows, Config{ExcludeTags: []string{"hentai"}})
@@ -91,9 +91,9 @@ func TestFilterFuture_RemovesFutureShows(t *testing.T) {
 	t.Parallel()
 
 	year := 2099
-	shows := []anilist.Show{
-		{StartDate: anilist.FuzzyDate{Year: &year, Month: makePtr(12)}},
-		{StartDate: anilist.FuzzyDate{Year: makePtr(2020), Month: makePtr(1)}},
+	shows := []model.Show{
+		{StartDate: model.FuzzyDate{Year: &year, Month: makePtr(12)}},
+		{StartDate: model.FuzzyDate{Year: makePtr(2020), Month: makePtr(1)}},
 	}
 
 	result := FilterFuture(shows, 3)
@@ -105,8 +105,8 @@ func TestFilterFuture_RemovesFutureShows(t *testing.T) {
 func TestFilterFuture_NoLimit(t *testing.T) {
 	t.Parallel()
 
-	shows := []anilist.Show{
-		{StartDate: anilist.FuzzyDate{Year: makePtr(2099), Month: makePtr(12)}},
+	shows := []model.Show{
+		{StartDate: model.FuzzyDate{Year: makePtr(2099), Month: makePtr(12)}},
 	}
 
 	result := FilterFuture(shows, 0)
@@ -135,7 +135,7 @@ func TestIsBlacklisted(t *testing.T) {
 func TestHasExcludedTag(t *testing.T) {
 	t.Parallel()
 
-	show := anilist.Show{Tags: []anilist.Tag{{Name: "Action"}, {Name: "Hentai"}}}
+	show := model.Show{Tags: []model.Tag{{Name: "Action"}, {Name: "Hentai"}}}
 	if !hasExcludedTag(show, []string{"Hentai"}) {
 		t.Error("expected hentai tag to match")
 	}
