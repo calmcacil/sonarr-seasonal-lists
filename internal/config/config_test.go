@@ -24,8 +24,8 @@ func TestFillDefaults(t *testing.T) {
 	if cfg.OutputDir != "./sonarr-lists" {
 		t.Errorf("expected OutputDir './sonarr-lists', got %q", cfg.OutputDir)
 	}
-	if cfg.AnibridgeMappingPath != mapping.DefaultAnibridgePath {
-		t.Errorf("expected AnibridgeMappingPath %q, got %q", mapping.DefaultAnibridgePath, cfg.AnibridgeMappingPath)
+	if cfg.AnibridgeMappingPath != mapping.DefaultAnibridgePath() {
+		t.Errorf("expected AnibridgeMappingPath %q, got %q", mapping.DefaultAnibridgePath(), cfg.AnibridgeMappingPath)
 	}
 	if cfg.Logging.Level != "info" {
 		t.Errorf("expected Logging.Level 'info', got %q", cfg.Logging.Level)

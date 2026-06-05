@@ -273,37 +273,6 @@ func printDryRun(data map[model.SeasonKey][]output.Show, label string) {
 	}
 }
 
-func groupBySeason(shows []model.Show) map[string][]model.Show {
-	m := map[string][]model.Show{
-		"WINTER":  {},
-		"SPRING":  {},
-		"SUMMER":  {},
-		"FALL":    {},
-		"UNKNOWN": {},
-	}
-	for _, sh := range shows {
-		code := sh.SeasonCode()
-		m[code] = append(m[code], sh)
-	}
-	return m
-}
-
-func filterDecember(allShows *[]model.Show, prior []model.Show) int {
-	seen := make(map[int]bool, len(*allShows))
-	for _, sh := range *allShows {
-		seen[sh.ID] = true
-	}
-	var added int
-	for _, sh := range prior {
-		if sh.IsDecemberStart() && !seen[sh.ID] {
-			*allShows = append(*allShows, sh)
-			seen[sh.ID] = true
-			added++
-		}
-	}
-	return added
-}
-
 func setupLogging(cfg *config.Config, verbose bool) (func(), error) {
 	level := cfg.Logging.Level
 	if verbose {

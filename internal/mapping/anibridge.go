@@ -17,7 +17,10 @@ import (
 
 const defaultAnibridgeURL = "https://github.com/anibridge/anibridge-mappings/releases/download/v3/mappings.json.zst"
 
-const DefaultAnibridgePath = "/tmp/anilistgen_anibridge.json.zst"
+func DefaultAnibridgePath() string {
+	dir := os.TempDir()
+	return filepath.Join(dir, "anilistgen_anibridge.json.zst")
+}
 
 type anibridgeMeta struct {
 	SchemaVersion string `json:"schema_version"`
@@ -222,11 +225,13 @@ func extractTVDB(dec *json.Decoder) (int, bool) {
 
 		epCount := countSourceEpisodes(rawValue)
 
-		if scope == "s1" && epCount >= bestEpCount {
+		if scope == "s1" {
 			bestTVDB = tvdbID
 			bestEpCount = epCount
 			foundS1 = true
-		} else if !foundS1 && epCount > bestEpCount {
+			continue
+		}
+		if !foundS1 && epCount > bestEpCount {
 			bestTVDB = tvdbID
 			bestEpCount = epCount
 		}

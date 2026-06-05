@@ -17,6 +17,8 @@ import (
 //go:embed index.html
 var indexTemplate string
 
+var indexTmpl = template.Must(template.New("index").Parse(indexTemplate))
+
 type Show struct {
 	TVDBID int    `json:"tvdbId"`
 	Title  string `json:"title,omitempty"`
@@ -59,9 +61,23 @@ func writeJSON(dir, filename string, shows []Show) error {
 // WriteAllJSON writes per-season JSON files, yearly aggregates, and (for the
 // "series" category) an HTML index page with Sonarr setup instructions.
 func WriteAllJSON(outputDir, baseURL, category string, seasonal map[model.SeasonKey][]Show, indexYears []int) error {
+	// Aggregate per-season shows into year buckets, walking in sorted key
+	// order for deterministic yearly output.
+	keys := make([]model.SeasonKey, 0, len(seasonal))
+	for k := range seasonal {
+		keys = append(keys, k)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].Year != keys[j].Year {
+			return keys[i].Year < keys[j].Year
+		}
+		return keys[i].Season < keys[j].Season
+	})
+
 	byYear := map[int][]Show{}
 
-	for key, shows := range seasonal {
+	for _, key := range keys {
+		shows := seasonal[key]
 		if err := WriteSeasonJSON(outputDir, category, key.Season, key.Year, shows); err != nil {
 			return fmt.Errorf("write %s: %w", key.String(), err)
 		}
@@ -82,11 +98,12 @@ func WriteAllJSON(outputDir, baseURL, category string, seasonal map[model.Season
 		for _, y := range indexYears {
 			yearSet[y] = struct{}{}
 		}
-		years := make([]int, 0, len(yearSet))
-		for y := range yearSet {
-			years = append(years, y)
-		}
-		if err := WriteIndex(outputDir, baseURL, years); err != nil {
+	years := make([]int, 0, len(yearSet))
+	for y := range yearSet {
+		years = append(years, y)
+	}
+	sort.Ints(years)
+	if err := WriteIndex(outputDir, baseURL, years); err != nil {
 			return fmt.Errorf("write index: %w", err)
 		}
 	}
@@ -112,9 +129,9 @@ func WriteIndex(dir, baseURL string, years []int) error {
 		yearOpts += fmt.Sprintf("      <option value=\"%d\"%s>%d</option>\n", y, sel, y)
 	}
 
-	tmpl, err := template.New("index").Parse(indexTemplate)
+	tmpl, err := indexTmpl.Clone()
 	if err != nil {
-		return fmt.Errorf("parse index template: %w", err)
+		return fmt.Errorf("clone index template: %w", err)
 	}
 
 	type tmplData struct {

@@ -63,150 +63,43 @@ func testMapping(t *testing.T) *mapping.Resolver {
 	return mapping.NewResolver(am)
 }
 
-func TestProcess_OrdinarySeason(t *testing.T) {
+func TestGroupBySeason(t *testing.T) {
 	t.Parallel()
 
-	resolver := testMapping(t)
+	winter := model.Show{ID: 1, Season: makePtr("WINTER")}
+	spring := model.Show{ID: 2, Season: makePtr("SPRING")}
+	summer := model.Show{ID: 3, Season: makePtr("SUMMER")}
+	fall := model.Show{ID: 4, Season: makePtr("FALL")}
+	unknown := model.Show{ID: 5, Season: nil}
+	lower := model.Show{ID: 6, Season: makePtr("winter")}
 
-	shows := []model.Show{
-		{ID: 1, IDMal: makePtr(16498), Format: "TV", Title: model.Title{English: makePtr("Show One")}},
-		{ID: 2, IDMal: makePtr(99999), Format: "TV", Title: model.Title{English: makePtr("Show Two")}},
-		{ID: 3, IDMal: nil, Format: "TV", Title: model.Title{English: makePtr("Unmatched")}},
-		{ID: 4, IDMal: makePtr(100), Format: "MOVIE", Title: model.Title{English: makePtr("Not a series")}},
+	result := groupBySeason([]model.Show{winter, spring, summer, fall, unknown, lower})
+
+	if len(result["WINTER"]) != 2 {
+		t.Errorf("expected 2 WINTER shows, got %d", len(result["WINTER"]))
+	}
+	if len(result["SPRING"]) != 1 {
+		t.Errorf("expected 1 SPRING show, got %d", len(result["SPRING"]))
+	}
+	if len(result["SUMMER"]) != 1 {
+		t.Errorf("expected 1 SUMMER show, got %d", len(result["SUMMER"]))
+	}
+	if len(result["FALL"]) != 1 {
+		t.Errorf("expected 1 FALL show, got %d", len(result["FALL"]))
+	}
+	if len(result["UNKNOWN"]) != 1 {
+		t.Errorf("expected 1 UNKNOWN show, got %d", len(result["UNKNOWN"]))
 	}
 
-	srv := httptest.NewServer(mockSeasonResponse(shows))
-	defer srv.Close()
-	deps := testDeps(srv.URL, resolver)
-
-	result := Process(context.Background(), deps, "SPRING", 2025)
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
+	found := false
+	for _, s := range result["WINTER"] {
+		if s.ID == 6 {
+			found = true
+			break
+		}
 	}
-	if result.Key.Season != "SPRING" || result.Key.Year != 2025 {
-		t.Errorf("wrong key: %v", result.Key)
-	}
-
-	if len(result.All) != 2 {
-		t.Errorf("expected 2 resolved All shows, got %d", len(result.All))
-	}
-	if len(result.NewOnly) != 2 {
-		t.Errorf("expected 2 resolved NewOnly shows, got %d", len(result.NewOnly))
-	}
-}
-
-func TestProcess_FetchError(t *testing.T) {
-	t.Parallel()
-
-	resolver := testMapping(t)
-
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer srv.Close()
-	deps := testDeps(srv.URL, resolver)
-
-	result := Process(context.Background(), deps, "WINTER", 2025)
-	if result.Err == nil {
-		t.Fatal("expected error from failed fetch")
-	}
-	if len(result.All) != 0 || len(result.NewOnly) != 0 {
-		t.Error("expected empty output on error")
-	}
-}
-
-func TestProcess_ShortDurationFiltered(t *testing.T) {
-	t.Parallel()
-
-	resolver := testMapping(t)
-
-	shows := []model.Show{
-		{ID: 1, IDMal: makePtr(16498), Format: "TV", Duration: makePtr(6), Title: model.Title{English: makePtr("Short")}},
-		{ID: 2, IDMal: makePtr(99999), Format: "TV", Duration: makePtr(24), Title: model.Title{English: makePtr("Normal")}},
-	}
-
-	srv := httptest.NewServer(mockSeasonResponse(shows))
-	defer srv.Close()
-	deps := testDeps(srv.URL, resolver)
-
-	result := Process(context.Background(), deps, "SPRING", 2025)
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
-	}
-
-	if len(result.All) != 1 {
-		t.Errorf("expected 1 show after duration filter, got %d", len(result.All))
-	}
-	if result.All[0].TVDBID != 67890 {
-		t.Errorf("expected TVDB 67890 (Normal), got %d", result.All[0].TVDBID)
-	}
-}
-
-func TestProcess_BlacklistFiltered(t *testing.T) {
-	t.Parallel()
-
-	resolver := testMapping(t)
-
-	shows := []model.Show{
-		{ID: 1, IDMal: makePtr(16498), Format: "TV", Title: model.Title{English: makePtr("Good Show")}},
-		{ID: 2, IDMal: makePtr(99999), Format: "TV", Title: model.Title{English: makePtr("Bad Show")}},
-	}
-
-	srv := httptest.NewServer(mockSeasonResponse(shows))
-	defer srv.Close()
-	deps := testDeps(srv.URL, resolver)
-	deps.FilterConfig = filter.Config{Blacklist: []string{"99999"}}
-
-	result := Process(context.Background(), deps, "SPRING", 2025)
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
-	}
-
-	if len(result.All) != 1 {
-		t.Errorf("expected 1 show after blacklist filter, got %d", len(result.All))
-	}
-	if result.All[0].TVDBID != 12345 {
-		t.Errorf("expected TVDB 12345, got %d", result.All[0].TVDBID)
-	}
-}
-
-func TestProcess_IsNewDetection(t *testing.T) {
-	t.Parallel()
-
-	resolver := testMapping(t)
-
-	shows := []model.Show{
-		{
-			ID: 1, IDMal: makePtr(16498), Format: "TV",
-			Title:     model.Title{English: makePtr("Original Show")},
-			Relations: nil,
-		},
-		{
-			ID: 2, IDMal: makePtr(99999), Format: "TV",
-			Title: model.Title{English: makePtr("Sequel Show")},
-			Relations: &model.RelationBlock{
-				Edges: []model.RelationEdge{{RelationType: "PREQUEL"}},
-			},
-		},
-	}
-
-	srv := httptest.NewServer(mockSeasonResponse(shows))
-	defer srv.Close()
-	deps := testDeps(srv.URL, resolver)
-
-	result := Process(context.Background(), deps, "SPRING", 2025)
-	if result.Err != nil {
-		t.Fatalf("unexpected error: %v", result.Err)
-	}
-
-	if len(result.All) != 2 {
-		t.Errorf("expected 2 in All (both are TV), got %d", len(result.All))
-	}
-	if len(result.NewOnly) != 1 {
-		t.Errorf("expected 1 in NewOnly (only original), got %d", len(result.NewOnly))
-	}
-	if result.NewOnly[0].TVDBID != 12345 {
-		t.Errorf("expected TVDB 12345 as the new-only show, got %d", result.NewOnly[0].TVDBID)
+	if !found {
+		t.Error("expected lowercase winter show in WINTER bucket")
 	}
 }
 
@@ -279,18 +172,5 @@ func TestRun_PartialFailure(t *testing.T) {
 	key2025 := model.SeasonKey{Season: "SPRING", Year: 2025}
 	if s, ok := series[key2025]; !ok || len(s) != 1 {
 		t.Errorf("expected 1 show for SPRING 2025 after failed 2024, got %v", s)
-	}
-}
-
-func TestProcessBatch_NilInput(t *testing.T) {
-	t.Parallel()
-
-	resolver := testMapping(t)
-	result := ProcessBatch(resolver, map[model.SeasonKey][]model.Show{
-		{Season: "WINTER", Year: 2026}: nil,
-	}, false)
-	key := model.SeasonKey{Season: "WINTER", Year: 2026}
-	if shows, ok := result[key]; !ok || len(shows) != 0 {
-		t.Errorf("expected empty slice for nil input, got %v", shows)
 	}
 }

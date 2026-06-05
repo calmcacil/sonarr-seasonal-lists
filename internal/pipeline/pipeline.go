@@ -31,14 +31,6 @@ type Stats struct {
 	Unmatched int
 }
 
-type Result struct {
-	Key     model.SeasonKey
-	All     []output.Show
-	NewOnly []output.Show
-	Stats   Stats
-	Err     error
-}
-
 func Run(ctx context.Context, deps Deps, years []int, seasons []string) (map[model.SeasonKey][]output.Show, map[model.SeasonKey][]output.Show, []Stats, []error) {
 	allSeries := map[model.SeasonKey][]output.Show{}
 	allNew := map[model.SeasonKey][]output.Show{}
@@ -69,20 +61,25 @@ func Run(ctx context.Context, deps Deps, years []int, seasons []string) (map[mod
 			seasonShows := bySeason[season]
 
 			stats := Stats{Season: season, Year: year, Fetched: len(seasonShows)}
+			filteredCount := 0
 
 			if season == "WINTER" {
 				before := len(seasonShows)
 				seasonShows = filterWinterMonth(seasonShows, "winter shows")
-				stats.Filtered += before - len(seasonShows)
+				filteredCount += before - len(seasonShows)
 			}
 
 			series, newOnly := splitSeriesNew(seasonShows)
 
+			before := len(series) + len(newOnly)
 			series = filter.Filter(series, deps.FilterConfig)
 			newOnly = filter.Filter(newOnly, deps.FilterConfig)
+			filteredCount += before - len(series) - len(newOnly)
 
 			series = filter.FilterFuture(series, deps.AheadMonths)
 			newOnly = filter.FilterFuture(newOnly, deps.AheadMonths)
+
+			stats.Filtered = filteredCount
 
 			resolvedAll := deps.Resolver.Project(series)
 			resolvedNew := deps.Resolver.Project(newOnly)
@@ -99,58 +96,6 @@ func Run(ctx context.Context, deps Deps, years []int, seasons []string) (map[mod
 	}
 
 	return allSeries, allNew, allStats, errs
-}
-
-func Process(ctx context.Context, deps Deps, season string, year int) Result {
-	key := model.SeasonKey{Season: season, Year: year}
-	slog.Info("fetching season", "season", season, "year", year)
-
-	shows, err := deps.AniClient.FetchSeason(ctx, season, year, deps.MaxPerYear, deps.Formats)
-	if err != nil {
-		slog.Error("fetch failed", "season", season, "year", year, "error", err)
-		return Result{Key: key, Err: err, Stats: Stats{Season: season, Year: year}}
-	}
-
-	stats := Stats{Fetched: len(shows)}
-
-	if deps.WinterOverflow && season == "WINTER" {
-		shows = winterOverflow(ctx, deps.AniClient, year, deps.MaxPerYear, deps.Formats, shows)
-	}
-
-	if season == "WINTER" {
-		before := len(shows)
-		shows = filterWinterMonth(shows, "winter shows")
-		stats.Filtered += before - len(shows)
-	}
-
-	slog.Info("fetched shows from AniList",
-		"season", season, "year", year, "count", len(shows))
-
-	series, newOnly := splitSeriesNew(shows)
-
-	series = filter.Filter(series, deps.FilterConfig)
-	stats.Filtered += stats.Fetched - len(series)
-	series = filter.FilterFuture(series, deps.AheadMonths)
-
-	newOnly = filter.Filter(newOnly, deps.FilterConfig)
-	newOnly = filter.FilterFuture(newOnly, deps.AheadMonths)
-
-	resolvedAll := deps.Resolver.Project(series)
-	resolvedNew := deps.Resolver.Project(newOnly)
-
-	return Result{
-		Key:     key,
-		All:     resolvedAll,
-		NewOnly: resolvedNew,
-		Stats: Stats{
-			Season:    season,
-			Year:      year,
-			Fetched:   stats.Fetched,
-			Resolved:  len(resolvedAll) + len(resolvedNew),
-			Unmatched: len(series) + len(newOnly) - len(resolvedAll) - len(resolvedNew),
-		},
-		Err: nil,
-	}
 }
 
 func winterOverflow(ctx context.Context, client *anilist.Client, year, maxPerYear int, formats []string, shows []model.Show) []model.Show {
@@ -238,22 +183,4 @@ func groupBySeason(shows []model.Show) map[string][]model.Show {
 	return m
 }
 
-func ProcessBatch(resolver *mapping.Resolver, all map[model.SeasonKey][]model.Show, dryRun bool) map[model.SeasonKey][]output.Show {
-	out := map[model.SeasonKey][]output.Show{}
-	for key, shows := range all {
-		resolved := resolver.Project(shows)
-		unmatched := len(shows) - len(resolved)
 
-		if dryRun {
-			fmt.Printf("\n[%s %d] %d shows (%d resolved, %d unmatched)\n",
-				key.Season, key.Year, len(shows), len(resolved), unmatched)
-			for _, s := range resolved {
-				fmt.Printf("  TVDB %d — %s\n", s.TVDBID, s.Title)
-			}
-			continue
-		}
-
-		out[key] = resolved
-	}
-	return out
-}

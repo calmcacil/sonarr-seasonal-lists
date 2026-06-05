@@ -110,7 +110,7 @@ func (c *Config) FillDefaults() {
 		c.OutputDir = "./sonarr-lists"
 	}
 	if c.AnibridgeMappingPath == "" {
-		c.AnibridgeMappingPath = mapping.DefaultAnibridgePath
+		c.AnibridgeMappingPath = mapping.DefaultAnibridgePath()
 	}
 	if c.BaseURL == "" {
 		c.BaseURL = DefaultBaseURL
@@ -166,7 +166,7 @@ func DefaultConfig() *Config {
 			TimeoutMinutes: 10,
 		},
 		OutputDir:             "./sonarr-lists",
-		AnibridgeMappingPath: mapping.DefaultAnibridgePath,
+		AnibridgeMappingPath: mapping.DefaultAnibridgePath(),
 		BaseURL:               DefaultBaseURL,
 		Logging: LoggingConfig{
 			Level: "info",
