@@ -1,28 +1,21 @@
-# Seasonal Anime Lists for Sonarr (UNOFFICIAL AniList)
+# DEPRECATED — Seasonal Anime Lists for Sonarr (UNOFFICIAL AniList)
 
-![Last updated](https://img.shields.io/github/last-commit/calmcacil/sonarr-seasonal-lists/gh-pages?label=last%20updated&color=blue)
+> **This project is superseded by [sonarr-anime-bridge](https://github.com/calmcacil/sonarr-anime-bridge),
+> which provides a Docker container with the same functionality plus anime movie
+> list support. Users are recommended to migrate. This repository remains
+> available for reference but is no longer actively maintained.**
 
 Sonarr-compatible seasonal anime lists from AniList.
 
-Replace `2026` with any available year. Add the URL to
-Sonarr → Settings → Import Lists → Add → Custom List.
+Run `anilistgen -output ./out` to generate JSON files in `./out/YYYY/`.
+The resulting JSON can be served via any static file server or imported
+directly from a local path with Sonarr's Custom List import.
 
-| URL | What it includes |
+| File | What it includes |
 |---|---|
-| `https://lists.calmcacil.dev/2026/winter-series.json` | TV shows airing Winter 2026 |
-| `https://lists.calmcacil.dev/2026/spring-series.json` | TV shows airing Spring 2026 |
-| `https://lists.calmcacil.dev/2026/summer-series.json` | TV shows airing Summer 2026 |
-| `https://lists.calmcacil.dev/2026/fall-series.json` | TV shows airing Fall 2026 |
-| `https://lists.calmcacil.dev/2026/winter-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/spring-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/summer-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/fall-series-new.json` | New TV shows only (no sequels) |
-| `https://lists.calmcacil.dev/2026/winter-movies.json` | Movies, OVAs, specials airing Winter 2026 |
-| `https://lists.calmcacil.dev/2026/movies.json` | All movies, OVAs, specials for 2026 |
-| `https://lists.calmcacil.dev/2026/series.json` | All TV shows for all of 2026 |
-| `https://lists.calmcacil.dev/2026/series-new.json` | New TV shows for all of 2026 |
-
----
+| `YYYY/winter-series.json` | TV shows airing that season |
+| `YYYY/series.json` | All TV shows for that year |
+| `YYYY/series-new.json` | New TV shows only (no sequels) |
 
 ## Licenses
 
@@ -30,12 +23,13 @@ Sonarr → Settings → Import Lists → Add → Custom List.
 |---|---|
 | [LICENSE](./LICENSE) | MIT License for this project |
 | [NOTICE](./NOTICE) | Third-party attribution notices |
-| [docs/THIRD_PARTY.md](./docs/THIRD_PARTY.md) | Full third-party license details |
 
 ## Further reading
 
 | Document | Contents |
 |---|---|
 | [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) | Config reference and environment variables |
-| [docs/SELFHOSTING.md](./docs/SELFHOSTING.md) | Run locally, fork on GitHub, or host yourself |
+| [docs/SELFHOSTING.md](./docs/SELFHOSTING.md) | Run locally |
 | [docs/EXPLANATION.md](./docs/EXPLANATION.md) | Architecture, pipeline, and data sources |
+
+Licenses and docs below.

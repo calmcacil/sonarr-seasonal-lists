@@ -1,6 +1,11 @@
 # Self-hosting anilistgen
 
-Run your own instance — either locally or on your own GitHub repo.
+> **Deprecated**: This project is superseded by
+> [sonarr-anime-bridge](https://github.com/calmcacil/sonarr-anime-bridge),
+> which provides a Docker container with the same functionality plus anime
+> movie list support. The instructions below are kept for reference.
+
+Run your own instance locally.
 
 ---
 
@@ -90,65 +95,3 @@ server {
 ```
 
 Then point Sonarr at `http://localhost:8080/winter-2026.json`.
-
----
-
-## Fork on GitHub
-
-Run the exact same setup as the hosted repo on your own GitHub account.
-
-### 1. Fork the repo
-
-Click Fork on [github.com/calmcacil/sonarr-seasonal-lists](https://github.com/calmcacil/sonarr-seasonal-lists).
-
-### 2. Enable GitHub Pages
-
-Settings → Pages → Source: **Deploy from a branch** → Branch: `gh-pages`, path: `/`.
-
-### 3. (Optional) Customize the config
-
-Edit `anilistgen.yaml` in your fork to change years, filters, blacklist, etc.
-The workflow reads this file from the repo.
-
-### 4. Run the action
-
-Actions → **Weekly anime list sync** → Run workflow (or wait for the Sunday schedule).
-
-### 5. Use your lists
-
-```
-https://{your-username}.github.io/anilistgen/winter-2026.json
-```
-
----
-
-## Hosting options
-
-### GitHub Pages (free)
-
-Works out of the box with the included workflow. Files are public.
-
-### Cloudflare Pages / Netlify
-
-Point to the `./out` directory. Use the workflow to build, then deploy
-via their GitHub integration.
-
-### S3 / Cloudflare R2
-
-Modify the workflow to upload to S3 instead of gh-pages:
-
-```yaml
-- run: ./anilistgen -output ./out
-- uses: jakejarvis/s3-sync-action@v0.5.1
-  with:
-    args: --acl public-read --delete
-  env:
-    AWS_S3_BUCKET: my-lists
-    AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-```
-
-### Local web server
-
-nginx, Caddy, or any static file server pointed at the output directory.
-Useful for LAN-only setups.

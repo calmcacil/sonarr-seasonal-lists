@@ -26,8 +26,6 @@ blacklist: []               # MAL ID or title substring
 
 output_dir: ./sonarr-lists
 
-base_url: https://lists.calmcacil.dev
-
 anibridge_mapping_path: /tmp/anilistgen_anibridge.json.zst   # auto-downloaded, zstd-compressed
 
 logging:
@@ -96,15 +94,6 @@ Auto-downloaded if the file doesn't exist.
 
 Max age of the cached mapping before it is re-downloaded.
 
-### `base_url`
-
-| Type | Default |
-|---|---|
-| `string` | `https://lists.calmcacil.dev` |
-
-Base URL used in the generated index page for copy-to-clipboard URLs.
-Override when self-hosting on a custom domain.
-
 ### `logging`
 
 | Field | Type | Default | Description |
@@ -130,7 +119,6 @@ prefix — useful for Docker, CI/CD, or when no config file is present.
 | `ALG_ANILIST_AHEAD_MONTHS` | `anilist.ahead_months` | `3` |
 | `ALG_BLACKLIST` | `blacklist` | `""` |
 | `ALG_OUTPUT_DIR` | `output_dir` | `./sonarr-lists` |
-| `ALG_BASE_URL` | `base_url` | `https://lists.calmcacil.dev` |
 | `ALG_ANIBRIDGE_MAPPING_PATH` | `anibridge_mapping_path` | `/tmp/anilistgen_anibridge.json.zst` |
 | `ALG_ANIBRIDGE_MAPPING_MAX_AGE` | `anibridge_mapping_max_age` | `""` |
 | `ALG_LOG_LEVEL` | `logging.level` | `info` |

@@ -127,7 +127,7 @@ cosmetic.
 - **No MDBList** — anilistgen uses a local cross-provider mapping file.
   No API keys, no rate limits, no external service dependencies.
 
-- **Static files only** — Output is JSON on GitHub Pages. No server needed.
+- **Static files only** — Output is JSON. No server needed.
   Sonarr imports directly from the URL.
 
 - **Weekly sync** — AniList seasonal data doesn't change daily. Weekly is

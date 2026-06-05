@@ -3,7 +3,7 @@
 ## Overview
 
 Go CLI tool that fetches seasonal anime from AniList, resolves TVDB IDs
-from local mapping files, and outputs Sonarr-compatible JSON for GitHub Pages.
+from local mapping files, and outputs Sonarr-compatible JSON.
 
 ## Commands
 
